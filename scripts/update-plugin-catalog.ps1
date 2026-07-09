@@ -15,34 +15,31 @@ param(
     [string]$RepoUrl = "https://github.com/Peterseer/DalamudSamplePlugin"
 )
 
-function Read-Catalog([string]$Path) {
+function Read-CatalogEntries([string]$Path) {
     if (-not (Test-Path $Path)) {
-        return New-Object System.Collections.Generic.List[object]
+        return @()
     }
 
     $text = (Get-Content -Raw -Path $Path).Trim()
     if (-not $text) {
-        return New-Object System.Collections.Generic.List[object]
+        return @()
     }
 
-    $parsed = $text | ConvertFrom-Json
-    $list = New-Object System.Collections.Generic.List[object]
-
-    if ($parsed -is [System.Array]) {
-        foreach ($item in $parsed) {
-            $list.Add($item)
-        }
-    }
-    else {
-        $list.Add($parsed)
+    $parsed = $text | ConvertFrom-Json -AsHashtable
+    if ($parsed -is [System.Collections.IDictionary]) {
+        return @($parsed)
     }
 
-    return $list
+    return @($parsed)
 }
 
-function Find-EntryIndex($Catalog, [string]$InternalName) {
-    for ($i = 0; $i -lt $Catalog.Count; $i++) {
-        if ($Catalog[$i].InternalName -eq $InternalName) {
+function Write-CatalogEntries([string]$Path, [object[]]$Entries) {
+    ($Entries | ConvertTo-Json -Depth 8) + "`n" | Set-Content -Path $Path -Encoding utf8 -NoNewline
+}
+
+function Find-EntryIndex([object[]]$Entries, [string]$InternalName) {
+    for ($i = 0; $i -lt $Entries.Length; $i++) {
+        if ([string]$Entries[$i].InternalName -eq $InternalName) {
             return $i
         }
     }
@@ -50,59 +47,59 @@ function Find-EntryIndex($Catalog, [string]$InternalName) {
     return -1
 }
 
-function Build-PluginMasterEntry($Manifest, $Existing, [string]$DownloadUrl, [string]$IconUrl, [string]$RepoUrl) {
+function Build-PluginMasterEntry($Manifest, $Existing) {
     $lastUpdate = [int64][double]::Parse(
         (Get-Date).ToUniversalTime().Subtract([datetime]'1970-01-01').TotalSeconds)
 
     $entry = [ordered]@{
-        Author              = $Manifest.Author
-        Name                = $Manifest.Name
-        InternalName        = $Manifest.InternalName
-        Punchline           = $Manifest.Punchline
-        Description         = $Manifest.Description
-        ApplicableVersion   = if ($Manifest.ApplicableVersion) { $Manifest.ApplicableVersion } else { "any" }
+        Author              = [string]$Manifest.Author
+        Name                = [string]$Manifest.Name
+        InternalName        = [string]$Manifest.InternalName
+        Punchline           = [string]$Manifest.Punchline
+        Description         = [string]$Manifest.Description
+        ApplicableVersion   = if ($Manifest.ApplicableVersion) { [string]$Manifest.ApplicableVersion } else { "any" }
         IconUrl             = $IconUrl
         Tags                = @($Manifest.Tags)
-        DalamudApiLevel     = $Manifest.DalamudApiLevel
+        DalamudApiLevel     = [int]$Manifest.DalamudApiLevel
         LastUpdate          = $lastUpdate
         DownloadCount       = if ($Existing -and $Existing.DownloadCount) { [int]$Existing.DownloadCount } else { 0 }
         DownloadLinkInstall = $DownloadUrl
         DownloadLinkUpdate  = $DownloadUrl
-        AssemblyVersion     = $Manifest.AssemblyVersion
-        RepoUrl             = if ($Manifest.RepoUrl) { $Manifest.RepoUrl } else { $RepoUrl }
+        AssemblyVersion     = [string]$Manifest.AssemblyVersion
+        RepoUrl             = if ($Manifest.RepoUrl) { [string]$Manifest.RepoUrl } else { $RepoUrl }
     }
 
-    if ($Existing -and $Existing.Changelog) {
-        $entry.Changelog = $Existing.Changelog
+    if ($Existing -and $Existing.Contains("Changelog") -and $Existing.Changelog) {
+        $entry.Changelog = [string]$Existing.Changelog
     }
 
     if ($null -ne $Manifest.LoadRequiredState) {
-        $entry.LoadRequiredState = $Manifest.LoadRequiredState
+        $entry.LoadRequiredState = [int]$Manifest.LoadRequiredState
     }
 
     if ($null -ne $Manifest.LoadSync) {
-        $entry.LoadSync = $Manifest.LoadSync
+        $entry.LoadSync = [bool]$Manifest.LoadSync
     }
 
     if ($null -ne $Manifest.CanUnloadAsync) {
-        $entry.CanUnloadAsync = $Manifest.CanUnloadAsync
+        $entry.CanUnloadAsync = [bool]$Manifest.CanUnloadAsync
     }
 
-    return [pscustomobject]$entry
+    return $entry
 }
 
-function Build-RepoEntry($Manifest, $Existing, [string]$DownloadUrl, [string]$RepoUrl, [int64]$LastUpdate) {
-    return [pscustomobject][ordered]@{
-        Author              = $Manifest.Author
-        Name                = $Manifest.Name
-        Description         = $Manifest.Description
-        Punchline           = $Manifest.Punchline
-        InternalName        = $Manifest.InternalName
-        AssemblyVersion     = $Manifest.AssemblyVersion
-        RepoUrl             = if ($Manifest.RepoUrl) { $Manifest.RepoUrl } else { $RepoUrl }
-        ApplicableVersion   = if ($Manifest.ApplicableVersion) { $Manifest.ApplicableVersion } else { "any" }
+function Build-RepoEntry($Manifest, $Existing, [int64]$LastUpdate) {
+    return [ordered]@{
+        Author              = [string]$Manifest.Author
+        Name                = [string]$Manifest.Name
+        Description         = [string]$Manifest.Description
+        Punchline           = [string]$Manifest.Punchline
+        InternalName        = [string]$Manifest.InternalName
+        AssemblyVersion     = [string]$Manifest.AssemblyVersion
+        RepoUrl             = if ($Manifest.RepoUrl) { [string]$Manifest.RepoUrl } else { $RepoUrl }
+        ApplicableVersion   = if ($Manifest.ApplicableVersion) { [string]$Manifest.ApplicableVersion } else { "any" }
         Tags                = @($Manifest.Tags)
-        DalamudApiLevel     = $Manifest.DalamudApiLevel
+        DalamudApiLevel     = [int]$Manifest.DalamudApiLevel
         IsHide              = "False"
         IsTestingExclusive  = "False"
         LastUpdated         = $LastUpdate
@@ -113,44 +110,38 @@ function Build-RepoEntry($Manifest, $Existing, [string]$DownloadUrl, [string]$Re
     }
 }
 
-function Write-Catalog([string]$Path, $Catalog) {
-    $array = @()
-    foreach ($item in $Catalog) {
-        $array += $item
-    }
+function Update-CatalogFile(
+    [string]$Path,
+    $Manifest,
+    [scriptblock]$BuildEntry) {
 
-    $json = ConvertTo-Json -InputObject $array -Depth 8
-    $json + "`n" | Set-Content -Path $Path -Encoding utf8 -NoNewline
-}
-
-function Update-Catalog([string]$Path, $Manifest, $EntryFactory) {
-    $catalog = Read-Catalog $Path
-    $index = Find-EntryIndex $catalog $Manifest.InternalName
-    $existing = if ($index -ge 0) { $catalog[$index] } else { $null }
-    $entry = & $EntryFactory $existing
+    $entries = @(Read-CatalogEntries $Path)
+    $index = Find-EntryIndex $entries $Manifest.InternalName
+    $existing = if ($index -ge 0) { $entries[$index] } else { $null }
+    $entry = & $BuildEntry $existing
 
     if ($index -ge 0) {
-        $catalog[$index] = $entry
+        $entries[$index] = $entry
     }
     else {
-        $catalog.Insert(0, $entry)
+        $entries = @($entry) + $entries
     }
 
-    Write-Catalog $Path $catalog
+    Write-CatalogEntries $Path $entries
     Write-Host "Updated $Path -> $($Manifest.InternalName) $($Manifest.AssemblyVersion)"
     return $entry
 }
 
-$manifest = Get-Content -Raw -Path $ManifestPath | ConvertFrom-Json
+$manifest = Get-Content -Raw -Path $ManifestPath | ConvertFrom-Json -AsHashtable
 
-$pluginEntry = Update-Catalog $PluginMasterPath $manifest {
+$pluginEntry = Update-CatalogFile $PluginMasterPath $manifest {
     param($Existing)
-    Build-PluginMasterEntry $manifest $Existing $DownloadUrl $IconUrl $RepoUrl
+    Build-PluginMasterEntry $manifest $Existing
 }
 
 if ($RepoJsonPath) {
-    Update-Catalog $RepoJsonPath $manifest {
+    Update-CatalogFile $RepoJsonPath $manifest {
         param($Existing)
-        Build-RepoEntry $manifest $Existing $DownloadUrl $RepoUrl $pluginEntry.LastUpdate
+        Build-RepoEntry $manifest $Existing $pluginEntry.LastUpdate
     } | Out-Null
 }
