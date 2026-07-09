@@ -14,6 +14,10 @@ on:
 permissions:
   contents: write
 
+env:
+  CATALOG_REPOSITORY: Peterseer/DalamudPlugins
+  CATALOG_BRANCH: main
+
 jobs:
   release:
     runs-on: windows-latest
@@ -65,20 +69,6 @@ jobs:
           "zip=$zip" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
-      - name: Update plugin catalog
-        shell: pwsh
-        run: |
-          $version = '${{ steps.artifacts.outputs.version }}'
-          $downloadUrl = "https://github.com/${{ github.repository }}/releases/download/$version/latest.zip"
-          $iconUrl = "https://raw.githubusercontent.com/${{ github.repository }}/master/AICompanion/icon.png"
-          ./scripts/update-plugin-catalog.ps1 `
-            -ManifestPath '${{ steps.artifacts.outputs.manifest }}' `
-            -PluginMasterPath 'pluginmaster.json' `
-            -RepoJsonPath 'repo.json' `
-            -DownloadUrl $downloadUrl `
-            -IconUrl $iconUrl `
-            -RepoUrl "https://github.com/${{ github.repository }}"
-
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -89,15 +79,45 @@ jobs:
           make_latest: true
           generate_release_notes: true
 
-      - name: Commit plugin catalog
+      - name: Update external plugin catalog
         shell: pwsh
+        env:
+          CATALOG_REPO_TOKEN: ${{ secrets.CATALOG_REPO_TOKEN }}
         run: |
+          if (-not $env:CATALOG_REPO_TOKEN) {
+            throw "Missing CATALOG_REPO_TOKEN secret. Add a PAT with repo scope for ${{ env.CATALOG_REPOSITORY }}."
+          }
+
+          $version = '${{ steps.artifacts.outputs.version }}'
+          $pluginRepo = '${{ github.repository }}'
+          $downloadUrl = "https://github.com/$pluginRepo/releases/download/$version/latest.zip"
+          $iconUrl = "https://raw.githubusercontent.com/${{ env.CATALOG_REPOSITORY }}/${{ env.CATALOG_BRANCH }}/AICompanion/icon.png"
+          $repoUrl = "https://github.com/$pluginRepo"
+          $catalogPath = Join-Path $env:RUNNER_TEMP 'DalamudPlugins'
+
+          if (Test-Path $catalogPath) {
+            Remove-Item -Recurse -Force $catalogPath
+          }
+
+          git clone --depth 1 --branch '${{ env.CATALOG_BRANCH }}' `
+            "https://x-access-token:$($env:CATALOG_REPO_TOKEN)@github.com/${{ env.CATALOG_REPOSITORY }}.git" `
+            $catalogPath
+
+          ./scripts/update-plugin-catalog.ps1 `
+            -ManifestPath '${{ steps.artifacts.outputs.manifest }}' `
+            -PluginMasterPath (Join-Path $catalogPath 'pluginmaster.json') `
+            -DownloadUrl $downloadUrl `
+            -IconUrl $iconUrl `
+            -RepoUrl $repoUrl
+
+          Push-Location $catalogPath
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add pluginmaster.json repo.json
+          git add pluginmaster.json
           if (git diff --cached --quiet) {
-            Write-Host "plugin catalog unchanged"
+            Write-Host "External plugin catalog unchanged"
             exit 0
           }
-          git commit -m "chore: update pluginmaster.json for ${{ steps.artifacts.outputs.version }} [skip ci]"
+          git commit -m "chore: update AICompanion $version [skip ci]"
           git push
+          Pop-Location

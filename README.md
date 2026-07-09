@@ -1,34 +1,32 @@
 # AI Companion
 
-Dalamud 插件：AI 驱动的 FF14 玩家互动（聊天回复、交易、组队等）。
+Dalamud 插件源码：AI 驱动的 FF14 玩家互动（聊天回复、交易、组队等）。
 
-## 自定义插件库（国服 XIVLauncherCN）
+## 安装（玩家）
 
-在启动器 **设置 → 实验性功能 → 自定义插件库** 中添加（推荐 `pluginmaster.json` 格式）：
-
-```text
-https://raw.githubusercontent.com/Peterseer/DalamudSamplePlugin/master/pluginmaster.json
-```
-
-也兼容旧格式 `repo.json`：
+在 XIVLauncherCN **设置 → 实验性功能 → 自定义插件库** 中添加插件库地址（非本仓库）：
 
 ```text
-https://raw.githubusercontent.com/Peterseer/DalamudSamplePlugin/master/repo.json
+https://raw.githubusercontent.com/Peterseer/DalamudPlugins/main/pluginmaster.json
 ```
 
-添加后即可在插件安装器里搜索 **AI Companion** 并安装/更新。
+然后在插件安装器搜索 **AI Companion** 安装/更新。
+
+## 仓库分工
+
+| 仓库 | 用途 |
+|------|------|
+| [Peterseer/DalamudSamplePlugin](https://github.com/Peterseer/DalamudSamplePlugin) | 插件源码 + Release 包 |
+| [Peterseer/DalamudPlugins](https://github.com/Peterseer/DalamudPlugins) | `pluginmaster.json` 索引 + 图标 |
 
 ## 自动发布
 
-推送到 `master` 分支后，GitHub Actions 会自动：
+推送到 `master` 后 GitHub Actions 会：
 
-1. 编译 Release 并打包 `latest.zip`
-2. 创建/更新对应版本的 [GitHub Release](https://github.com/Peterseer/DalamudSamplePlugin/releases)
-3. 更新 `pluginmaster.json`（以及兼容用的 `repo.json`）中的下载链接与版本号
+1. 编译 Release 并上传 `latest.zip` 到 [Releases](https://github.com/Peterseer/DalamudSamplePlugin/releases)
+2. 自动更新 [DalamudPlugins](https://github.com/Peterseer/DalamudPlugins) 中的 `pluginmaster.json`
 
-发布新版本时，只需修改 `SamplePlugin/SamplePlugin.csproj` 中的 `<Version>`，然后推送到 GitHub。
-
-也可在 GitHub **Actions → Build and Publish Plugin → Run workflow** 手动触发。
+发布新版本：修改 `SamplePlugin/SamplePlugin.csproj` 的 `<Version>` 后推送即可。
 
 ## 本地开发
 
@@ -36,9 +34,7 @@ https://raw.githubusercontent.com/Peterseer/DalamudSamplePlugin/master/repo.json
 dotnet build SamplePlugin/SamplePlugin.csproj -c Release
 ```
 
-Release 产物位于 `SamplePlugin/bin/Release/AICompanion/`（含 `latest.zip` 与完整 manifest）。
-
-默认 Dalamud 路径见 `Directory.Build.props`，可通过环境变量 `DALAMUD_HOME` 覆盖。
+Release 产物：`SamplePlugin/bin/Release/AICompanion/latest.zip`
 
 ## 命令
 

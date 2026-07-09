@@ -10,10 +10,12 @@ param(
 
     [string]$RepoJsonPath = "",
 
-    [string]$IconUrl = "https://raw.githubusercontent.com/Peterseer/DalamudSamplePlugin/master/AICompanion/icon.png",
+    [string]$IconUrl = "https://raw.githubusercontent.com/Peterseer/DalamudPlugins/main/AICompanion/icon.png",
 
     [string]$RepoUrl = "https://github.com/Peterseer/DalamudSamplePlugin"
 )
+
+# RepoJsonPath is optional; kept for legacy repo.json sync if needed.
 
 function Read-CatalogEntries([string]$Path) {
     if (-not (Test-Path $Path)) {
