@@ -4,21 +4,27 @@ Dalamud 插件：AI 驱动的 FF14 玩家互动（聊天回复、交易、组队
 
 ## 自定义插件库（国服 XIVLauncherCN）
 
-在启动器 **设置 → 实验性功能 → 自定义插件库** 中添加：
+在启动器 **设置 → 实验性功能 → 自定义插件库** 中添加（推荐 `pluginmaster.json` 格式）：
 
 ```text
-https://raw.githubusercontent.com/Peterseer/DalamudSamplePlugin/main/repo.json
+https://raw.githubusercontent.com/Peterseer/DalamudSamplePlugin/master/pluginmaster.json
+```
+
+也兼容旧格式 `repo.json`：
+
+```text
+https://raw.githubusercontent.com/Peterseer/DalamudSamplePlugin/master/repo.json
 ```
 
 添加后即可在插件安装器里搜索 **AI Companion** 并安装/更新。
 
 ## 自动发布
 
-推送到 `main` 分支后，GitHub Actions 会自动：
+推送到 `master` 分支后，GitHub Actions 会自动：
 
-1. 编译 Release 并打包 `AICompanion.zip`
+1. 编译 Release 并打包 `latest.zip`
 2. 创建/更新对应版本的 [GitHub Release](https://github.com/Peterseer/DalamudSamplePlugin/releases)
-3. 更新根目录 `repo.json` 中的下载链接与版本号
+3. 更新 `pluginmaster.json`（以及兼容用的 `repo.json`）中的下载链接与版本号
 
 发布新版本时，只需修改 `SamplePlugin/SamplePlugin.csproj` 中的 `<Version>`，然后推送到 GitHub。
 
