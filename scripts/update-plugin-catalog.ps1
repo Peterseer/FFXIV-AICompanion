@@ -20,7 +20,16 @@ function Read-Catalog([string]$Path) {
         return @()
     }
 
-    return @(Get-Content -Raw -Path $Path | ConvertFrom-Json)
+    $data = Get-Content -Raw -Path $Path | ConvertFrom-Json
+    if ($null -eq $data) {
+        return @()
+    }
+
+    if ($data -is [System.Array]) {
+        return @($data)
+    }
+
+    return @($data)
 }
 
 function Find-EntryIndex($Catalog, [string]$InternalName) {
@@ -97,7 +106,8 @@ function Build-RepoEntry($Manifest, $Existing, [string]$DownloadUrl, [string]$Re
 }
 
 function Write-Catalog([string]$Path, $Catalog) {
-    ($Catalog | ConvertTo-Json -Depth 8) + "`n" | Set-Content -Path $Path -Encoding utf8 -NoNewline
+    $json = ConvertTo-Json -InputObject @($Catalog) -Depth 8
+    $json + "`n" | Set-Content -Path $Path -Encoding utf8 -NoNewline
 }
 
 $manifest = Get-Content -Raw -Path $ManifestPath | ConvertFrom-Json
