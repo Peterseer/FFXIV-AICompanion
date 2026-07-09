@@ -17,19 +17,27 @@ param(
 
 function Read-Catalog([string]$Path) {
     if (-not (Test-Path $Path)) {
-        return @()
+        return New-Object System.Collections.Generic.List[object]
     }
 
-    $data = Get-Content -Raw -Path $Path | ConvertFrom-Json
-    if ($null -eq $data) {
-        return @()
+    $text = (Get-Content -Raw -Path $Path).Trim()
+    if (-not $text) {
+        return New-Object System.Collections.Generic.List[object]
     }
 
-    if ($data -is [System.Array]) {
-        return @($data)
+    $parsed = $text | ConvertFrom-Json
+    $list = New-Object System.Collections.Generic.List[object]
+
+    if ($parsed -is [System.Array]) {
+        foreach ($item in $parsed) {
+            $list.Add($item)
+        }
+    }
+    else {
+        $list.Add($parsed)
     }
 
-    return @($data)
+    return $list
 }
 
 function Find-EntryIndex($Catalog, [string]$InternalName) {
@@ -106,37 +114,43 @@ function Build-RepoEntry($Manifest, $Existing, [string]$DownloadUrl, [string]$Re
 }
 
 function Write-Catalog([string]$Path, $Catalog) {
-    $json = ConvertTo-Json -InputObject @($Catalog) -Depth 8
+    $array = @()
+    foreach ($item in $Catalog) {
+        $array += $item
+    }
+
+    $json = ConvertTo-Json -InputObject $array -Depth 8
     $json + "`n" | Set-Content -Path $Path -Encoding utf8 -NoNewline
 }
 
-$manifest = Get-Content -Raw -Path $ManifestPath | ConvertFrom-Json
-$pluginMaster = Read-Catalog $PluginMasterPath
-$pluginIndex = Find-EntryIndex $pluginMaster $manifest.InternalName
-$existingPlugin = if ($pluginIndex -ge 0) { $pluginMaster[$pluginIndex] } else { $null }
+function Update-Catalog([string]$Path, $Manifest, $EntryFactory) {
+    $catalog = Read-Catalog $Path
+    $index = Find-EntryIndex $catalog $Manifest.InternalName
+    $existing = if ($index -ge 0) { $catalog[$index] } else { $null }
+    $entry = & $EntryFactory $existing
 
-$pluginEntry = Build-PluginMasterEntry $manifest $existingPlugin $DownloadUrl $IconUrl $RepoUrl
-if ($pluginIndex -ge 0) {
-    $pluginMaster[$pluginIndex] = $pluginEntry
-} else {
-    $pluginMaster = @($pluginEntry) + $pluginMaster
-}
-
-Write-Catalog $PluginMasterPath $pluginMaster
-Write-Host "Updated $PluginMasterPath -> $($manifest.InternalName) $($manifest.AssemblyVersion)"
-
-if ($RepoJsonPath) {
-    $repo = Read-Catalog $RepoJsonPath
-    $repoIndex = Find-EntryIndex $repo $manifest.InternalName
-    $existingRepo = if ($repoIndex -ge 0) { $repo[$repoIndex] } else { $null }
-    $repoEntry = Build-RepoEntry $manifest $existingRepo $DownloadUrl $RepoUrl $pluginEntry.LastUpdate
-
-    if ($repoIndex -ge 0) {
-        $repo[$repoIndex] = $repoEntry
-    } else {
-        $repo = @($repoEntry) + $repo
+    if ($index -ge 0) {
+        $catalog[$index] = $entry
+    }
+    else {
+        $catalog.Insert(0, $entry)
     }
 
-    Write-Catalog $RepoJsonPath $repo
-    Write-Host "Updated $RepoJsonPath -> $($manifest.InternalName) $($manifest.AssemblyVersion)"
+    Write-Catalog $Path $catalog
+    Write-Host "Updated $Path -> $($Manifest.InternalName) $($Manifest.AssemblyVersion)"
+    return $entry
+}
+
+$manifest = Get-Content -Raw -Path $ManifestPath | ConvertFrom-Json
+
+$pluginEntry = Update-Catalog $PluginMasterPath $manifest {
+    param($Existing)
+    Build-PluginMasterEntry $manifest $Existing $DownloadUrl $IconUrl $RepoUrl
+}
+
+if ($RepoJsonPath) {
+    Update-Catalog $RepoJsonPath $manifest {
+        param($Existing)
+        Build-RepoEntry $manifest $Existing $DownloadUrl $RepoUrl $pluginEntry.LastUpdate
+    } | Out-Null
 }
