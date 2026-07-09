@@ -1,0 +1,6 @@
+<Project>
+  <!-- 国服 XIVLauncherCN 默认 Dalamud 路径；可通过环境变量 DALAMUD_HOME 覆盖 -->
+  <PropertyGroup>
+    <DALAMUD_HOME Condition="'$(DALAMUD_HOME)' == ''">C:\Users\admin\AppData\Roaming\XIVLauncherCN\addon\Hooks\dev</DALAMUD_HOME>
+  </PropertyGroup>
+</Project>

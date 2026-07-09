@@ -1,0 +1,15 @@
+{
+  "Author": "Peterseer",
+  "Name": "AI Companion",
+  "InternalName": "AICompanion",
+  "Punchline": "AI 驱动的 FF14 玩家互动插件",
+  "Description": "连接 OpenAI 兼容 API，根据聊天与情感动作自动思考并回复（公开/喊话/私聊/部队/通讯贝等），支持交易、组队等社交自动化。命令: /aic",
+  "ApplicableVersion": "any",
+  "Tags": [
+    "ai",
+    "chat",
+    "companion",
+    "roleplay",
+    "trade"
+  ]
+}

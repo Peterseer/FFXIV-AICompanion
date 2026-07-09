@@ -1,17 +1,29 @@
 <?xml version="1.0" encoding="utf-8"?>
-<Project Sdk="Dalamud.NET.Sdk/12.0.2">
+<Project Sdk="Dalamud.NET.Sdk/15.0.0">
   <PropertyGroup>
-    <Version>0.0.0.1</Version>
-    <Description>A sample plugin.</Description>
-    <PackageProjectUrl>https://github.com/goatcorp/SamplePlugin</PackageProjectUrl>
+    <Version>0.1.0.1</Version>
+    <AssemblyName>AICompanion</AssemblyName>
+    <InternalName>AICompanion</InternalName>
+    <Name>AI Companion</Name>
+    <Author>Peterseer</Author>
+    <Description>AI-driven FF14 player interaction plugin for Dalamud.</Description>
+    <Punchline>AI 驱动的 FF14 玩家互动插件</Punchline>
+    <RepoUrl>https://github.com/Peterseer/DalamudSamplePlugin</RepoUrl>
+    <PackageProjectUrl>https://github.com/Peterseer/DalamudSamplePlugin</PackageProjectUrl>
     <PackageLicenseExpression>AGPL-3.0-or-later</PackageLicenseExpression>
     <IsPackable>false</IsPackable>
   </PropertyGroup>
-
-  <ItemGroup>
-    <Content Include="..\Data\goat.png">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <Visible>false</Visible>
-    </Content>
-  </ItemGroup>
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <OutputPath>bin\Release\</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
+  </PropertyGroup>
+  <Target Name="PackagePlugin" AfterTargets="Build" Condition="'$(Configuration)' == 'Release'">
+    <DalamudPackager
+      MakeZip="true"
+      ProjectDir="$(ProjectDir)"
+      OutputPath="$(OutputPath)"
+      AssemblyName="$(AssemblyName)"
+      Include="$(AssemblyName).dll;$(AssemblyName).json" />
+  </Target>
 </Project>

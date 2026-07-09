@@ -1,106 +1,169 @@
-﻿using System;
+using System;
 using System.Numerics;
-using Dalamud.Interface.Utility;
+using System.Threading.Tasks;
 using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
-using ImGuiNET;
-using Lumina.Excel.Sheets;
+using Dalamud.Bindings.ImGui;
+using SamplePlugin.Services;
 
 namespace SamplePlugin.Windows;
 
 public class MainWindow : Window, IDisposable
 {
-    private string GoatImagePath;
-    private Plugin Plugin;
+    private readonly Plugin plugin;
+    private bool isTestingConnection;
+    private string? testResult;
+    private bool autoScrollLog = true;
+    private int lastLogCount;
 
-    // We give this window a hidden ID using ##
-    // So that the user will see "My Amazing Window" as window title,
-    // but for ImGui the ID is "My Amazing Window##With a hidden ID"
-    public MainWindow(Plugin plugin, string goatImagePath)
-        : base("My Amazing Window##With a hidden ID", ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse)
+    public MainWindow(Plugin plugin)
+        : base("AI 互动###AICompanionMain", ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse)
     {
+        this.plugin = plugin;
         SizeConstraints = new WindowSizeConstraints
         {
-            MinimumSize = new Vector2(375, 330),
-            MaximumSize = new Vector2(float.MaxValue, float.MaxValue)
+            MinimumSize = new Vector2(440, 460),
+            MaximumSize = new Vector2(float.MaxValue, float.MaxValue),
         };
 
-        GoatImagePath = goatImagePath;
-        Plugin = plugin;
+        plugin.ActivityLog.Changed += OnLogChanged;
     }
 
-    public void Dispose() { }
+    public void Dispose()
+    {
+        plugin.ActivityLog.Changed -= OnLogChanged;
+    }
+
+    private void OnLogChanged()
+    {
+        // 触发重绘；滚动在 Draw 中处理
+    }
 
     public override void Draw()
     {
-        // Do not use .Text() or any other formatted function like TextWrapped(), or SetTooltip().
-        // These expect formatting parameter if any part of the text contains a "%", which we can't
-        // provide through our bindings, leading to a Crash to Desktop.
-        // Replacements can be found in the ImGuiHelpers Class
-        ImGui.TextUnformatted($"The random config bool is {Plugin.Configuration.SomePropertyToBeSavedAndWithADefault}");
+        var config = plugin.Configuration;
+        var runtime = plugin.RuntimeControls;
+        var statusColor = config.Enabled ? new Vector4(0.2f, 0.9f, 0.3f, 1f) : new Vector4(0.9f, 0.3f, 0.2f, 1f);
+        var statusText = config.Enabled ? "运行中" : "已停止";
 
-        if (ImGui.Button("Show Settings"))
-        {
-            Plugin.ToggleConfigUI();
-        }
+        ImGui.TextColored(statusColor, $"状态: {statusText}");
+        ImGui.TextUnformatted($"模型: {config.Model}");
+        ImGui.TextUnformatted($"运行时: {runtime.StatusSummary}");
+        ImGui.TextUnformatted($"最近决策: {plugin.OrchestratorLastDecision}");
+
+        DrawRuntimeToggles(runtime);
+        DrawServiceStatus();
 
         ImGui.Spacing();
 
-        // Normally a BeginChild() would have to be followed by an unconditional EndChild(),
-        // ImRaii takes care of this after the scope ends.
-        // This works for all ImGui functions that require specific handling, examples are BeginTable() or Indent().
-        using (var child = ImRaii.Child("SomeChildWithAScrollbar", Vector2.Zero, true))
+        if (ImGui.Button("打开设置"))
         {
-            // Check if this child is drawing
-            if (child.Success)
+            plugin.ToggleConfigUI();
+        }
+
+        ImGui.SameLine();
+
+        using (ImRaii.Disabled(isTestingConnection))
+        {
+            if (ImGui.Button("测试 AI 连接"))
             {
-                ImGui.TextUnformatted("Have a goat:");
-                var goatImage = Plugin.TextureProvider.GetFromFile(GoatImagePath).GetWrapOrDefault();
-                if (goatImage != null)
-                {
-                    using (ImRaii.PushIndent(55f))
-                    {
-                        ImGui.Image(goatImage.ImGuiHandle, new Vector2(goatImage.Width, goatImage.Height));
-                    }
-                }
-                else
-                {
-                    ImGui.TextUnformatted("Image not found.");
-                }
-
-                ImGuiHelpers.ScaledDummy(20.0f);
-
-                // Example for other services that Dalamud provides.
-                // ClientState provides a wrapper filled with information about the local player object and client.
-
-                var localPlayer = Plugin.ClientState.LocalPlayer;
-                if (localPlayer == null)
-                {
-                    ImGui.TextUnformatted("Our local player is currently not loaded.");
-                    return;
-                }
-
-                if (!localPlayer.ClassJob.IsValid)
-                {
-                    ImGui.TextUnformatted("Our current job is currently not valid.");
-                    return;
-                }
-
-                // ExtractText() should be the preferred method to read Lumina SeStrings,
-                // as ToString does not provide the actual text values, instead gives an encoded macro string.
-                ImGui.TextUnformatted($"Our current job is ({localPlayer.ClassJob.RowId}) \"{localPlayer.ClassJob.Value.Abbreviation.ExtractText()}\"");
-
-                // Example for quarrying Lumina directly, getting the name of our current area.
-                var territoryId = Plugin.ClientState.TerritoryType;
-                if (Plugin.DataManager.GetExcelSheet<TerritoryType>().TryGetRow(territoryId, out var territoryRow))
-                {
-                    ImGui.TextUnformatted($"We are currently in ({territoryId}) \"{territoryRow.PlaceName.Value.Name.ExtractText()}\"");
-                }
-                else
-                {
-                    ImGui.TextUnformatted("Invalid territory.");
-                }
+                _ = TestConnectionAsync();
             }
+        }
+
+        if (!string.IsNullOrEmpty(testResult))
+        {
+            ImGui.TextUnformatted(testResult);
+        }
+
+        ImGui.Spacing();
+        ImGui.TextUnformatted("活动日志");
+        ImGui.SameLine();
+        ImGui.Checkbox("自动滚动", ref autoScrollLog);
+        ImGui.Separator();
+
+        var logLines = plugin.ActivityLog.Snapshot();
+        using (var child = ImRaii.Child("ActivityLogChild", new Vector2(0, 0), true))
+        {
+            foreach (var line in logLines)
+            {
+                ImGui.TextUnformatted(line);
+            }
+
+            if (autoScrollLog && logLines.Count != lastLogCount && logLines.Count > 0)
+            {
+                ImGui.SetScrollHereY(1f);
+            }
+        }
+
+        lastLogCount = logLines.Count;
+    }
+
+    private static void DrawRuntimeToggles(RuntimeControls runtime)
+    {
+        ImGui.Spacing();
+        ImGui.TextUnformatted("运行时开关（等同管理员私聊指令）");
+
+        var chat = runtime.ChatEnabled;
+        if (ImGui.Checkbox("对话输出", ref chat))
+        {
+            runtime.ChatEnabled = chat;
+        }
+
+        ImGui.SameLine();
+
+        var emote = runtime.EmoteEnabled;
+        if (ImGui.Checkbox("情感动作", ref emote))
+        {
+            runtime.EmoteEnabled = emote;
+        }
+
+        ImGui.SameLine();
+
+        var social = runtime.SocialEnabled;
+        if (ImGui.Checkbox("社交行为", ref social))
+        {
+            runtime.SocialEnabled = social;
+        }
+
+        if (ImGui.Button("重置运行时开关"))
+        {
+            runtime.Reset();
+        }
+    }
+
+    private void DrawServiceStatus()
+    {
+        ImGui.Spacing();
+        ImGui.TextUnformatted("服务状态");
+
+        var vnav = plugin.NavmeshIpc;
+        var vnavText = vnav.IsAvailable
+            ? vnav.IsReady() ? "vnav: 就绪" : "vnav: 未就绪"
+            : "vnav: 未安装";
+        ImGui.TextUnformatted(vnavText);
+        ImGui.SameLine();
+        ImGui.TextUnformatted($"交易监控: {plugin.TradeMonitor.PendingCount} 笔待处理");
+        ImGui.SameLine();
+        ImGui.TextUnformatted($"物品索引: {plugin.InventoryService.ItemCount}");
+    }
+
+    private async Task TestConnectionAsync()
+    {
+        isTestingConnection = true;
+        testResult = "测试中...";
+        try
+        {
+            var ok = await plugin.TestAiConnectionAsync().ConfigureAwait(true);
+            testResult = ok ? "连接成功" : "连接失败，请查看日志";
+        }
+        catch (Exception ex)
+        {
+            testResult = $"测试异常: {ex.Message}";
+        }
+        finally
+        {
+            isTestingConnection = false;
         }
     }
 }

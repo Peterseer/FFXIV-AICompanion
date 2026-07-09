@@ -1,81 +1,171 @@
-﻿using Dalamud.Game.Command;
+using Dalamud.Game.Command;
 using Dalamud.IoC;
-using Dalamud.Plugin;
-using System.IO;
 using Dalamud.Interface.Windowing;
+using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
+using SamplePlugin.Services;
 using SamplePlugin.Windows;
+using System.Threading.Tasks;
 
 namespace SamplePlugin;
 
 public sealed class Plugin : IDalamudPlugin
 {
     [PluginService] internal static IDalamudPluginInterface PluginInterface { get; private set; } = null!;
-    [PluginService] internal static ITextureProvider TextureProvider { get; private set; } = null!;
     [PluginService] internal static ICommandManager CommandManager { get; private set; } = null!;
+    [PluginService] internal static IPlayerState PlayerState { get; private set; } = null!;
     [PluginService] internal static IClientState ClientState { get; private set; } = null!;
+    [PluginService] internal static IChatGui ChatGui { get; private set; } = null!;
+    [PluginService] internal static IFramework Framework { get; private set; } = null!;
     [PluginService] internal static IDataManager DataManager { get; private set; } = null!;
+    [PluginService] internal static IGameGui GameGui { get; private set; } = null!;
+    [PluginService] internal static IObjectTable ObjectTable { get; private set; } = null!;
+    [PluginService] internal static ITargetManager TargetManager { get; private set; } = null!;
+    [PluginService] internal static IPartyList PartyList { get; private set; } = null!;
+    [PluginService] internal static ITextureProvider TextureProvider { get; private set; } = null!;
     [PluginService] internal static IPluginLog Log { get; private set; } = null!;
 
-    private const string CommandName = "/pmycommand";
+    private const string CommandName = "/aic";
 
     public Configuration Configuration { get; init; }
+    public ActivityLog ActivityLog { get; init; }
+    public EmoteRegistry EmoteRegistry { get; init; }
+    public AetheryteResolver AetheryteResolver { get; init; }
+    public InventoryService InventoryService { get; init; }
+    public NavmeshIpc NavmeshIpc { get; init; }
+    public TradeMonitor TradeMonitor { get; init; }
+    public PresetTradeService PresetTradeService { get; init; }
+    public RuntimeControls RuntimeControls { get; init; }
+    public PlayerMemory PlayerMemory { get; init; }
+    public OutboundEchoGuard EchoGuard { get; init; }
+    public InteractionSafetyService SafetyService { get; init; }
 
-    public readonly WindowSystem WindowSystem = new("SamplePlugin");
-    private ConfigWindow ConfigWindow { get; init; }
-    private MainWindow MainWindow { get; init; }
+    public readonly WindowSystem WindowSystem = new("AICompanion");
+
+    private readonly AiService aiService;
+    private readonly ChatMonitor chatMonitor;
+    private readonly TradeMonitor tradeMonitor;
+    private readonly InteractionOrchestrator orchestrator;
+    private readonly ConfigWindow configWindow;
+    private readonly MainWindow mainWindow;
+
+    public string OrchestratorLastDecision => orchestrator.LastDecisionSummary;
+
+    public Task<bool> TestAiConnectionAsync() => orchestrator.TestAiConnectionAsync();
 
     public Plugin()
     {
         Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
+        ActivityLog = new ActivityLog();
+        RuntimeControls = new RuntimeControls();
+        PlayerMemory = new PlayerMemory();
+        EchoGuard = new OutboundEchoGuard();
+        SafetyService = new InteractionSafetyService(Configuration, ObjectTable, PartyList, ActivityLog);
+        EmoteRegistry = new EmoteRegistry(DataManager, ActivityLog);
+        AetheryteResolver = new AetheryteResolver(DataManager, ActivityLog);
+        InventoryService = new InventoryService(DataManager, ActivityLog);
+        PresetTradeService = new PresetTradeService(Configuration, InventoryService);
+        NavmeshIpc navmeshIpc = new(PluginInterface, ActivityLog);
+        NavmeshIpc = navmeshIpc;
+        tradeMonitor = new TradeMonitor(Framework, GameGui, ObjectTable, Configuration, RuntimeControls, ActivityLog, EchoGuard, PresetTradeService);
+        TradeMonitor = tradeMonitor;
+        var playerTargeting = new PlayerTargeting(ObjectTable, TargetManager);
+        var partyInviteHelper = new PartyInviteHelper(playerTargeting, DataManager, ActivityLog);
 
-        // you might normally want to embed resources and load them from the manifest stream
-        var goatImagePath = Path.Combine(PluginInterface.AssemblyLocation.Directory?.FullName!, "goat.png");
+        var socialActionService = new SocialActionService(
+            Configuration,
+            RuntimeControls,
+            AetheryteResolver,
+            InventoryService,
+            tradeMonitor,
+            navmeshIpc,
+            PresetTradeService,
+            ObjectTable,
+            ClientState,
+            playerTargeting,
+            partyInviteHelper,
+            ActivityLog);
 
-        ConfigWindow = new ConfigWindow(this);
-        MainWindow = new MainWindow(this, goatImagePath);
+        var adminHandler = new AdminCommandHandler(Configuration, RuntimeControls, socialActionService, navmeshIpc, ActivityLog);
+        aiService = new AiService(Configuration, EmoteRegistry, AetheryteResolver, navmeshIpc, PresetTradeService, ActivityLog);
+        var tradeIntentConfirmationService = new TradeIntentConfirmationService(
+            PresetTradeService, InventoryService, EchoGuard, ActivityLog);
+        orchestrator = new InteractionOrchestrator(
+            Configuration,
+            aiService,
+            EmoteRegistry,
+            RuntimeControls,
+            EchoGuard,
+            socialActionService,
+            tradeIntentConfirmationService,
+            SafetyService,
+            Framework,
+            ActivityLog);
+        chatMonitor = new ChatMonitor(
+            ChatGui,
+            PlayerState,
+            Configuration,
+            ActivityLog,
+            adminHandler,
+            PlayerMemory,
+            EchoGuard,
+            InventoryService,
+            PresetTradeService,
+            SafetyService);
 
-        WindowSystem.AddWindow(ConfigWindow);
-        WindowSystem.AddWindow(MainWindow);
+        chatMonitor.OnEvent += orchestrator.Enqueue;
+
+        configWindow = new ConfigWindow(this);
+        mainWindow = new MainWindow(this);
+
+        WindowSystem.AddWindow(configWindow);
+        WindowSystem.AddWindow(mainWindow);
 
         CommandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
-            HelpMessage = "A useful message to display in /xlhelp"
+            HelpMessage = "打开 AI 互动插件主窗口",
         });
 
         PluginInterface.UiBuilder.Draw += DrawUI;
-
-        // This adds a button to the plugin installer entry of this plugin which allows
-        // to toggle the display status of the configuration ui
         PluginInterface.UiBuilder.OpenConfigUi += ToggleConfigUI;
-
-        // Adds another button that is doing the same but for the main ui of the plugin
         PluginInterface.UiBuilder.OpenMainUi += ToggleMainUI;
 
-        // Add a simple message to the log with level set to information
-        // Use /xllog to open the log window in-game
-        // Example Output: 00:57:54.959 | INF | [SamplePlugin] ===A cool log message from Sample Plugin===
-        Log.Information($"===A cool log message from {PluginInterface.Manifest.Name}===");
+        Framework.RunOnFrameworkThread(() =>
+        {
+            EmoteRegistry.Refresh();
+            AetheryteResolver.Refresh();
+            InventoryService.EnsureInitialized();
+        });
+
+        ActivityLog.Info("AI 互动插件已加载。");
+        Log.Information($"{PluginInterface.Manifest.Name} 已加载。");
     }
 
     public void Dispose()
     {
-        WindowSystem.RemoveAllWindows();
+        chatMonitor.OnEvent -= orchestrator.Enqueue;
+        chatMonitor.Dispose();
+        tradeMonitor.Dispose();
+        orchestrator.Dispose();
+        aiService.Dispose();
 
-        ConfigWindow.Dispose();
-        MainWindow.Dispose();
+        WindowSystem.RemoveAllWindows();
+        configWindow.Dispose();
+        mainWindow.Dispose();
 
         CommandManager.RemoveHandler(CommandName);
+        PluginInterface.UiBuilder.Draw -= DrawUI;
+        PluginInterface.UiBuilder.OpenConfigUi -= ToggleConfigUI;
+        PluginInterface.UiBuilder.OpenMainUi -= ToggleMainUI;
     }
 
     private void OnCommand(string command, string args)
     {
-        // in response to the slash command, just toggle the display status of our main ui
         ToggleMainUI();
     }
 
     private void DrawUI() => WindowSystem.Draw();
 
-    public void ToggleConfigUI() => ConfigWindow.Toggle();
-    public void ToggleMainUI() => MainWindow.Toggle();
+    public void ToggleConfigUI() => configWindow.Toggle();
+    public void ToggleMainUI() => mainWindow.Toggle();
 }

@@ -1,0 +1,100 @@
+name: Build and Publish Plugin
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - 'SamplePlugin/**'
+      - 'scripts/**'
+      - '.github/workflows/release.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Download Dalamud staging
+        shell: pwsh
+        run: |
+          $hooks = Join-Path $env:APPDATA "XIVLauncher\addon\Hooks\dev"
+          New-Item -ItemType Directory -Force -Path $hooks | Out-Null
+          Invoke-WebRequest -Uri https://goatcorp.github.io/dalamud-distrib/stg/latest.zip -OutFile dalamud.zip
+          Expand-Archive -Force -Path dalamud.zip -DestinationPath $hooks
+
+      - name: Build Release
+        run: dotnet build SamplePlugin/SamplePlugin.csproj --configuration Release
+
+      - name: Locate build artifacts
+        id: artifacts
+        shell: pwsh
+        run: |
+          $manifest = Get-ChildItem -Path SamplePlugin/bin/Release -Recurse -Filter AICompanion.json |
+            Where-Object { $_.Directory.Name -eq 'AICompanion' } |
+            Select-Object -First 1
+          if (-not $manifest) {
+            throw "AICompanion.json not found under SamplePlugin/bin/Release"
+          }
+
+          $zip = Join-Path $manifest.Directory.FullName 'latest.zip'
+          if (-not (Test-Path $zip)) {
+            throw "latest.zip not found at $zip"
+          }
+
+          $meta = Get-Content -Raw $manifest.FullName | ConvertFrom-Json
+          $version = $meta.AssemblyVersion
+          $releaseZip = Join-Path $env:RUNNER_TEMP "AICompanion.zip"
+          Copy-Item -Force $zip $releaseZip
+
+          "manifest=$($manifest.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "zip=$releaseZip" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Update repo.json
+        shell: pwsh
+        run: |
+          $version = '${{ steps.artifacts.outputs.version }}'
+          $downloadUrl = "https://github.com/${{ github.repository }}/releases/download/$version/AICompanion.zip"
+          ./scripts/update-repo-json.ps1 `
+            -ManifestPath '${{ steps.artifacts.outputs.manifest }}' `
+            -RepoJsonPath 'repo.json' `
+            -DownloadUrl $downloadUrl
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.artifacts.outputs.version }}
+          name: AI Companion ${{ steps.artifacts.outputs.version }}
+          files: ${{ steps.artifacts.outputs.zip }}
+          fail_on_unmatched_files: true
+          make_latest: true
+          generate_release_notes: true
+
+      - name: Commit repo.json
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add repo.json
+          if (git diff --cached --quiet) {
+            Write-Host "repo.json unchanged"
+            exit 0
+          }
+          git commit -m "chore: update repo.json for ${{ steps.artifacts.outputs.version }} [skip ci]"
+          git push
