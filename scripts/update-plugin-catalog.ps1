@@ -34,7 +34,12 @@ function Read-CatalogEntries([string]$Path) {
 }
 
 function Write-CatalogEntries([string]$Path, [object[]]$Entries) {
-    ($Entries | ConvertTo-Json -Depth 8) + "`n" | Set-Content -Path $Path -Encoding utf8 -NoNewline
+    $json = ConvertTo-Json -InputObject @($Entries) -Depth 8
+    if (-not $json.TrimStart().StartsWith("[")) {
+        $json = "[$json]"
+    }
+
+    $json + "`n" | Set-Content -Path $Path -Encoding utf8 -NoNewline
 }
 
 function Find-EntryIndex([object[]]$Entries, [string]$InternalName) {
