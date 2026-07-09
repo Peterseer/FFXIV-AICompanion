@@ -6,18 +6,9 @@ namespace SamplePlugin.Services;
 
 public sealed class TradeIntentConfirmationService
 {
-    private static readonly string[] ConfirmWords =
-    [
-        "要", "买", "来", "可以", "确认", "确定", "好的", "好", "行", "嗯", "恩", "ok", "yes", "y"
-    ];
-
-    private static readonly string[] RejectWords =
-    [
-        "不要", "不买", "算了", "取消", "不用", "先不", "no", "n"
-    ];
-
     private static readonly TimeSpan PendingTimeout = TimeSpan.FromMinutes(2);
 
+    private readonly Configuration configuration;
     private readonly PresetTradeService presetTradeService;
     private readonly InventoryService inventoryService;
     private readonly OutboundEchoGuard echoGuard;
@@ -26,16 +17,20 @@ public sealed class TradeIntentConfirmationService
     private readonly object lockObj = new();
 
     public TradeIntentConfirmationService(
+        Configuration configuration,
         PresetTradeService presetTradeService,
         InventoryService inventoryService,
         OutboundEchoGuard echoGuard,
         ActivityLog log)
     {
+        this.configuration = configuration;
         this.presetTradeService = presetTradeService;
         this.inventoryService = inventoryService;
         this.echoGuard = echoGuard;
         this.log = log;
     }
+
+    private PluginLanguage Language => configuration.InteractionLanguage;
 
     public bool TryHandleReply(ChatContextEntry trigger, out AiSocialAction? action)
     {
@@ -63,7 +58,7 @@ public sealed class TradeIntentConfirmationService
                 pending.Remove(key);
             }
 
-            SendReply(trigger, $"好的，已取消「{intent.Resolution.ItemName}」的购买确认。");
+            SendReply(trigger, PluginLocale.TradeCancelConfirmation(Language, intent.Resolution.ItemName));
             log.Info($"预设交易已取消: {trigger.SenderFullId} -> {intent.Resolution.ItemName}");
             return true;
         }
@@ -79,7 +74,7 @@ public sealed class TradeIntentConfirmationService
         }
 
         action = BuildTradeAction(trigger, intent.Resolution);
-        SendReply(trigger, "好的，现在为你发起交易。");
+        SendReply(trigger, PluginLocale.TradeOpenNow(Language));
         log.Info($"预设交易已确认: {trigger.SenderFullId} -> {intent.Resolution.ItemName}");
         return true;
     }
@@ -124,7 +119,12 @@ public sealed class TradeIntentConfirmationService
         {
             SendReply(
                 trigger,
-                $"抱歉，「{resolution.ItemName}」{PresetTradeService.FormatQualityLabel(resolution.Quality)}库存不足，需要 {resolution.Quantity}，当前背包 {bagCount}。");
+                PluginLocale.TradeInsufficientStock(
+                    Language,
+                    resolution.ItemName,
+                    PluginLocale.FormatQualityLabel(resolution.Quality, Language),
+                    resolution.Quantity,
+                    bagCount));
             return true;
         }
 
@@ -136,7 +136,12 @@ public sealed class TradeIntentConfirmationService
 
         SendReply(
             trigger,
-            $"「{resolution.ItemName}」{PresetTradeService.FormatQualityLabel(resolution.Quality)} x{resolution.Quantity}，价格 {resolution.ExpectedGil} 金币。需要购买吗？");
+            PluginLocale.TradePurchasePrompt(
+                Language,
+                resolution.ItemName,
+                PluginLocale.FormatQualityLabel(resolution.Quality, Language),
+                resolution.Quantity,
+                resolution.ExpectedGil));
         log.Info($"已询问购买确认: {trigger.SenderFullId} -> {resolution.ItemName}");
         return true;
     }
@@ -202,7 +207,7 @@ public sealed class TradeIntentConfirmationService
         }
     }
 
-    private static bool IsConfirm(string message)
+    private bool IsConfirm(string message)
     {
         var text = Normalize(message);
         if (IsReject(text))
@@ -210,7 +215,7 @@ public sealed class TradeIntentConfirmationService
             return false;
         }
 
-        foreach (var word in ConfirmWords)
+        foreach (var word in PluginLocale.GetConfirmWords(Language))
         {
             if (text.Contains(word, StringComparison.OrdinalIgnoreCase))
             {
@@ -221,10 +226,10 @@ public sealed class TradeIntentConfirmationService
         return false;
     }
 
-    private static bool IsReject(string message)
+    private bool IsReject(string message)
     {
         var text = Normalize(message);
-        foreach (var word in RejectWords)
+        foreach (var word in PluginLocale.GetRejectWords(Language))
         {
             if (text.Contains(word, StringComparison.OrdinalIgnoreCase))
             {

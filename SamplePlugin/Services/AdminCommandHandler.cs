@@ -50,7 +50,7 @@ public sealed class AdminCommandHandler
         {
             case "help":
                 log.Info("[管理员] 指令: emote/chat/social on|off, status, reset, help");
-                log.Info("[管理员] 社交: friend/trade/invite/target 玩家@服, tp/teleport 水晶名, nav stop");
+                log.Info("[管理员] 社交: friend/trade/invite/target 玩家@服, tp/teleport 水晶名, gs/gearset 名称或序号, nav stop");
                 return true;
             case "nav stop":
             case "navstop":
@@ -129,6 +129,11 @@ public sealed class AdminCommandHandler
             action = "teleport";
             args = raw[9..].Trim();
         }
+        else if (cmdLower.StartsWith("gearset ") || cmdLower.StartsWith("gs "))
+        {
+            action = "gearset";
+            args = cmdLower.StartsWith("gearset ") ? raw[8..].Trim() : raw[3..].Trim();
+        }
 
         else if (cmdLower.StartsWith("navigate ") || cmdLower.StartsWith("nav ") || cmdLower.StartsWith("goto "))
         {
@@ -157,6 +162,17 @@ public sealed class AdminCommandHandler
         if (action is "teleport" or "tp")
         {
             social.AetheryteName = args ?? string.Empty;
+        }
+        else if (action == "gearset")
+        {
+            if (int.TryParse(args, out var slot) && slot > 0)
+            {
+                social.GearsetSlot = slot;
+            }
+            else
+            {
+                social.GearsetName = args;
+            }
         }
         else if (PlayerIdentity.TryParseFullId(args ?? string.Empty, out var name, out var world))
         {

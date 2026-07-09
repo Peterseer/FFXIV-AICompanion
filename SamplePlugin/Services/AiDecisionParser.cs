@@ -132,6 +132,8 @@ internal static class AiDecisionParser
                 ItemName = ReadString(socialEl, "itemName"),
                 ItemQuantity = ReadInt(socialEl, "itemQuantity"),
                 ExpectedGil = ReadLong(socialEl, "expectedGil"),
+                GearsetName = ReadString(socialEl, "gearsetName"),
+                GearsetSlot = ReadInt(socialEl, "gearsetSlot"),
             };
         }
 

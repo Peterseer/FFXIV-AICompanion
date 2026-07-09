@@ -17,6 +17,7 @@ public sealed class AiService : IDisposable
     private readonly AetheryteResolver aetheryteResolver;
     private readonly NavmeshIpc navmeshIpc;
     private readonly PresetTradeService presetTradeService;
+    private readonly CharacterProfileService characterProfileService;
     private readonly ActivityLog log;
     private readonly HttpClient httpClient = new();
 
@@ -26,6 +27,7 @@ public sealed class AiService : IDisposable
         AetheryteResolver aetheryteResolver,
         NavmeshIpc navmeshIpc,
         PresetTradeService presetTradeService,
+        CharacterProfileService characterProfileService,
         ActivityLog log)
     {
         this.configuration = configuration;
@@ -33,6 +35,7 @@ public sealed class AiService : IDisposable
         this.aetheryteResolver = aetheryteResolver;
         this.navmeshIpc = navmeshIpc;
         this.presetTradeService = presetTradeService;
+        this.characterProfileService = characterProfileService;
         this.log = log;
     }
 
@@ -152,11 +155,19 @@ public sealed class AiService : IDisposable
 
     private List<object> BuildMessages(IReadOnlyList<ChatContextEntry> context, ChatContextEntry trigger)
     {
-        var systemPrompt = AiPromptBuilder.BuildSystemPrompt(configuration, emoteRegistry, aetheryteResolver, navmeshIpc, presetTradeService);
+        var systemPrompt = AiPromptBuilder.BuildSystemPrompt(
+            configuration, emoteRegistry, aetheryteResolver, navmeshIpc, presetTradeService, characterProfileService);
         var messages = new List<object>
         {
             new { role = "system", content = systemPrompt },
         };
+
+        var lang = configuration.InteractionLanguage;
+        var emotePrefix = PluginLocale.EmoteContextPrefix(lang);
+        var emoteTriggerPrefix = PluginLocale.EmoteTriggerPrefix(lang);
+        var triggerSuffix = PluginLocale.TriggerSuffix(lang);
+        var inventoryTag = PluginLocale.InventoryContextPrefix(lang);
+        var mapTag = PluginLocale.MapContextPrefix(lang);
 
         foreach (var entry in context)
         {
@@ -165,34 +176,49 @@ public sealed class AiService : IDisposable
                 continue;
             }
 
-            var prefix = entry.IsEmote ? "[情感动作]" : $"[{entry.Channel}]";
+            var prefix = entry.IsEmote ? emotePrefix : $"[{entry.Channel}]";
             var role = entry.IsLocalPlayer ? "assistant" : "user";
             var who = string.IsNullOrEmpty(entry.SenderFullId) ? entry.Sender : entry.SenderFullId;
             var content = $"{prefix} {who}: {entry.Message}";
             if (!string.IsNullOrEmpty(entry.InventoryHint))
             {
-                content += $" [背包: {entry.InventoryHint}]";
+                content += $" {inventoryTag} {entry.InventoryHint}]";
             }
 
             if (entry.HasMapLink)
             {
-                content += $" [坐标: {entry.MapPlaceName} {entry.MapCoords}]";
+                content += $" {mapTag} {entry.MapPlaceName} {entry.MapCoords}]";
+            }
+
+            if (!string.IsNullOrEmpty(entry.TravelHint))
+            {
+                content += $" {entry.TravelHint}";
             }
 
             messages.Add(new { role, content });
         }
 
         var triggerWho = string.IsNullOrEmpty(trigger.SenderFullId) ? trigger.Sender : trigger.SenderFullId;
-        var triggerPrefix = trigger.IsEmote ? "[情感动作-触发]" : $"[{trigger.Channel}-触发]";
+        var triggerPrefix = trigger.IsEmote ? emoteTriggerPrefix : $"[{trigger.Channel}{triggerSuffix}]";
         var triggerContent = $"{triggerPrefix} {triggerWho}: {trigger.Message}";
         if (!string.IsNullOrEmpty(trigger.InventoryHint))
         {
-            triggerContent += $" [背包: {trigger.InventoryHint}]";
+            triggerContent += $" {inventoryTag} {trigger.InventoryHint}]";
         }
 
         if (trigger.HasMapLink)
         {
-            triggerContent += $" [坐标: {trigger.MapPlaceName} {trigger.MapCoords}]";
+            triggerContent += $" {mapTag} {trigger.MapPlaceName} {trigger.MapCoords}]";
+        }
+
+        if (!string.IsNullOrEmpty(trigger.TravelHint))
+        {
+            triggerContent += $" {trigger.TravelHint}";
+        }
+
+        if (trigger.IsEchoDebug)
+        {
+            triggerContent += PluginLocale.EchoDebugTriggerHint(lang);
         }
 
         messages.Add(new { role = "user", content = triggerContent });

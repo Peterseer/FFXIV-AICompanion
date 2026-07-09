@@ -39,6 +39,31 @@ public static unsafe class GameActionExecutor
         ExecuteSlashCommand($"/em {SanitiseText(text.Trim())}");
     }
 
+    public static void ChangeGearset(int enabledSlot)
+    {
+        if (enabledSlot <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(enabledSlot));
+        }
+
+        ExecuteSlashCommand($"/gearset change {enabledSlot}");
+    }
+
+    public static bool TryChangeGearset(int enabledSlot, out string? error)
+    {
+        error = null;
+        try
+        {
+            ChangeGearset(enabledSlot);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+            return false;
+        }
+    }
+
     public static void SendFriendRequest(string playerName, string? world = null)
     {
         var target = FormatPlayerReference(playerName, world);
@@ -150,6 +175,7 @@ public static unsafe class GameActionExecutor
             "ls" or "l" => $"/l {message}",
             "party" or "p" => $"/p {message}",
             "alliance" or "a" => $"/a {message}",
+            "echo" or "e" => $"/echo {message}",
             _ => $"/s {message}",
         };
     }

@@ -23,6 +23,11 @@ public sealed class ChatContextEntry
     public bool IsAdminCommand { get; init; }
 
     /// <summary>
+    /// 由 /echo aic ... 触发的本地自测对话，回复走默语频道。
+    /// </summary>
+    public bool IsEchoDebug { get; init; }
+
+    /// <summary>
     /// 背包库存参考（如 "鱼糕: 23, 冰晶: 5"），由 ChatMonitor 扫描消息中提到的物品后填充，供 AI 判断是否可交易。
     /// </summary>
     public string InventoryHint { get; init; } = string.Empty;
@@ -55,4 +60,13 @@ public sealed class ChatContextEntry
     public string MapPlaceName { get; init; } = string.Empty;
 
     public string MapCoords { get; init; } = string.Empty;
+
+    /// <summary>检测到传送/寻路邀请时的 AI 提示。</summary>
+    public string TravelHint { get; init; } = string.Empty;
+
+    public bool WantsTravelNavigation { get; init; }
+
+    public bool WantsTravelTeleport { get; init; }
+
+    public string TravelAetheryteQuery { get; init; } = string.Empty;
 }

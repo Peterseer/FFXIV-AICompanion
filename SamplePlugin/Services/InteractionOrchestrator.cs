@@ -137,7 +137,7 @@ public sealed class InteractionOrchestrator : IDisposable
         {
             AiSocialAction? confirmedTrade = null;
             var handledTradeIntent = false;
-            if (RuntimeControls.CanOfferTradeInteraction(configuration, runtimeControls))
+            if (!trigger.IsEchoDebug && RuntimeControls.CanOfferTradeInteraction(configuration, runtimeControls))
             {
                 await framework.RunOnFrameworkThread(() =>
                 {
@@ -173,6 +173,7 @@ public sealed class InteractionOrchestrator : IDisposable
             }
 
             decision = SanitizeDecision(decision, trigger);
+            decision = ApplyTravelFallback(decision, trigger);
 
             lastDecisionSummary = decision.Social != null
                 ? $"shouldRespond={decision.ShouldRespond}, social={decision.Social.Action}, reason={decision.Reason}"
@@ -218,6 +219,51 @@ public sealed class InteractionOrchestrator : IDisposable
             decision.Social = null;
         }
 
+        if (trigger.IsEchoDebug)
+        {
+            decision.Social = null;
+            if (decision.Chat != null)
+            {
+                decision.Chat.Channel = "echo";
+            }
+        }
+
+        return decision;
+    }
+
+    private AiDecision ApplyTravelFallback(AiDecision decision, ChatContextEntry trigger)
+    {
+        if (trigger.IsEchoDebug
+            || !configuration.AllowSocialAutomation
+            || !configuration.AllowTeleport
+            || !runtimeControls.SocialEnabled)
+        {
+            return decision;
+        }
+
+        var action = decision.Social?.Action?.ToLowerInvariant();
+
+        if (trigger.WantsTravelNavigation && action is not ("navigate" or "nav" or "goto"))
+        {
+            decision.ShouldRespond = true;
+            decision.Social = new AiSocialAction { Action = "navigate" };
+            log.Info("旅行兜底: 注入 social.navigate（检测到坐标/邀请）。");
+            return decision;
+        }
+
+        if (trigger.WantsTravelTeleport
+            && !string.IsNullOrWhiteSpace(trigger.TravelAetheryteQuery)
+            && action is not ("teleport" or "tp"))
+        {
+            decision.ShouldRespond = true;
+            decision.Social = new AiSocialAction
+            {
+                Action = "teleport",
+                AetheryteName = trigger.TravelAetheryteQuery,
+            };
+            log.Info($"旅行兜底: 注入 social.teleport -> {trigger.TravelAetheryteQuery}");
+        }
+
         return decision;
     }
 
@@ -243,6 +289,11 @@ public sealed class InteractionOrchestrator : IDisposable
             if (canChat && decision.Chat != null && !string.IsNullOrWhiteSpace(decision.Chat.Message))
             {
                 var chat = decision.Chat;
+                if (trigger.IsEchoDebug)
+                {
+                    chat.Channel = "echo";
+                }
+
                 if (!safetyService.CanSendChat(chat))
                 {
                     return;
@@ -265,8 +316,8 @@ public sealed class InteractionOrchestrator : IDisposable
                 {
                     contextHistory.Add(new ChatContextEntry
                     {
-                        Channel = chat.Channel,
-                        Sender = "我",
+                        Channel = trigger.IsEchoDebug ? "echo" : chat.Channel,
+                        Sender = PluginLocale.LocalPlayerName(configuration.InteractionLanguage),
                         Message = chat.Message,
                         IsLocalPlayer = true,
                     });
@@ -280,8 +331,15 @@ public sealed class InteractionOrchestrator : IDisposable
 
             if (canEmote && !string.IsNullOrWhiteSpace(decision.Emote))
             {
-                GameActionExecutor.SendStandardEmote(decision.Emote);
-                log.Info($"已执行情感动作: /{decision.Emote.TrimStart('/')} motion");
+                if (trigger.IsEchoDebug)
+                {
+                    log.Info("默语调试模式，跳过情感动作。");
+                }
+                else
+                {
+                    GameActionExecutor.SendStandardEmote(decision.Emote);
+                    log.Info($"已执行情感动作: /{decision.Emote.TrimStart('/')} motion");
+                }
             }
             else if (!string.IsNullOrWhiteSpace(decision.Emote))
             {
@@ -290,36 +348,62 @@ public sealed class InteractionOrchestrator : IDisposable
 
             if (canEmote && !string.IsNullOrWhiteSpace(decision.CustomEmote))
             {
-                echoGuard.Record("emote", decision.CustomEmote);
-                GameActionExecutor.SendCustomEmote(decision.CustomEmote);
-                log.Info($"已执行自定义情感: /em {decision.CustomEmote}");
+                if (trigger.IsEchoDebug)
+                {
+                    log.Info("默语调试模式，跳过自定义情感。");
+                }
+                else
+                {
+                    echoGuard.Record("emote", decision.CustomEmote);
+                    GameActionExecutor.SendCustomEmote(decision.CustomEmote);
+                    log.Info($"已执行自定义情感: /em {decision.CustomEmote}");
+                }
             }
 
             if (decision.Social != null && !string.IsNullOrWhiteSpace(decision.Social.Action))
             {
-                if (!runtimeControls.SocialEnabled)
+                if (trigger.IsEchoDebug)
+                {
+                    log.Info("默语调试模式，跳过社交行为。");
+                }
+                else if (!runtimeControls.SocialEnabled)
                 {
                     log.Info("社交行为已被管理员禁用，跳过。");
                 }
-                else if (!configuration.AllowTrade)
+                else
                 {
-                    log.Info("交易功能未在设置中启用，跳过。");
-                }
-                else if (!runtimeControls.ChatEnabled)
-                {
-                    log.Info("对话输出已被管理员禁用，跳过交易确认询问。");
-                }
-                else if (tradeIntentConfirmationService.TryRequestForAction(decision.Social, trigger))
-                {
-                    log.Info("Preset trade confirmation requested.");
-                }
-                else if (socialActionService.TryExecute(decision.Social, trigger, out var socialMsg))
-                {
-                    log.Info($"社交行为: {socialMsg}");
-                }
-                else if (!string.IsNullOrEmpty(socialMsg))
-                {
-                    log.Warn($"社交行为未执行: {socialMsg}");
+                    var socialAction = decision.Social.Action.ToLowerInvariant();
+                    if (socialAction is "trade")
+                    {
+                        if (!configuration.AllowTrade)
+                        {
+                            log.Info("交易功能未在设置中启用，跳过。");
+                        }
+                        else if (!runtimeControls.ChatEnabled)
+                        {
+                            log.Info("对话输出已被管理员禁用，跳过交易确认询问。");
+                        }
+                        else if (tradeIntentConfirmationService.TryRequestForAction(decision.Social, trigger))
+                        {
+                            log.Info("Preset trade confirmation requested.");
+                        }
+                        else if (socialActionService.TryExecute(decision.Social, trigger, out var tradeMsg))
+                        {
+                            log.Info($"社交行为: {tradeMsg}");
+                        }
+                        else if (!string.IsNullOrEmpty(tradeMsg))
+                        {
+                            log.Warn($"社交行为未执行: {tradeMsg}");
+                        }
+                    }
+                    else if (socialActionService.TryExecute(decision.Social, trigger, out var socialMsg))
+                    {
+                        log.Info($"社交行为: {socialMsg}");
+                    }
+                    else if (!string.IsNullOrEmpty(socialMsg))
+                    {
+                        log.Warn($"社交行为未执行: {socialMsg}");
+                    }
                 }
             }
         }

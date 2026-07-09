@@ -11,6 +11,39 @@ public sealed record AetheryteMatch(uint Id, string Name, byte SubIndex, uint Te
 
 public sealed unsafe class AetheryteResolver
 {
+    private static readonly Dictionary<string, string[]> AliasTargets = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["海都"] = ["利姆萨罗敏萨", "利姆萨·罗敏萨", "Limsa Lominsa"],
+        ["limsa"] = ["Limsa Lominsa", "利姆萨罗敏萨", "利姆萨·罗敏萨"],
+        ["limsa lominsa"] = ["Limsa Lominsa", "利姆萨罗敏萨", "利姆萨·罗敏萨"],
+        ["森都"] = ["格里达尼亚", "Gridania"],
+        ["gridania"] = ["Gridania", "格里达尼亚"],
+        ["grid"] = ["Gridania", "格里达尼亚"],
+        ["沙都"] = ["乌尔达哈", "Ul'dah", "Uldah"],
+        ["uldah"] = ["Ul'dah", "Uldah", "乌尔达哈"],
+        ["ul'dah"] = ["Ul'dah", "Uldah", "乌尔达哈"],
+        ["黄金港"] = ["黄金港", "Kugane"],
+        ["kugane"] = ["Kugane", "黄金港"],
+        ["神拳痕"] = ["神拳痕", "Rhalgr's Reach", "Rhalgrs Reach"],
+        ["rhalgr"] = ["Rhalgr's Reach", "Rhalgrs Reach", "神拳痕"],
+        ["水晶都"] = ["水晶都", "Crystarium"],
+        ["crystarium"] = ["Crystarium", "The Crystarium", "水晶都"],
+        ["旧都"] = ["旧都", "Sharlayan", "Old Sharlayan"],
+        ["sharlayan"] = ["Sharlayan", "Old Sharlayan", "旧都"],
+        ["old sharlayan"] = ["Old Sharlayan", "Sharlayan", "旧都"],
+        ["拉札罕"] = ["拉札罕", "Radz-at-Han", "RadzatHan"],
+        ["radz-at-han"] = ["Radz-at-Han", "RadzatHan", "拉札罕"],
+        ["radzat-han"] = ["Radz-at-Han", "RadzatHan", "拉札罕"],
+        ["九宝"] = ["九宝", "Tuliyollal"],
+        ["tuliyollal"] = ["Tuliyollal", "九宝"],
+        ["伊修加德"] = ["伊修加德", "Ishgard"],
+        ["ishgard"] = ["Ishgard", "伊修加德"],
+        ["摩杜纳"] = ["摩杜纳", "Mor Dhona"],
+        ["mor dhona"] = ["Mor Dhona", "摩杜纳"],
+        ["萨雷安"] = ["萨雷安", "Solution Nine"],
+        ["solution nine"] = ["Solution Nine", "萨雷安"],
+    };
+
     private readonly IDataManager dataManager;
     private readonly ActivityLog log;
     private List<AetheryteMatch> cached = [];
@@ -21,6 +54,8 @@ public sealed unsafe class AetheryteResolver
         this.dataManager = dataManager;
         this.log = log;
     }
+
+    public static IReadOnlyCollection<string> GetAliasKeys() => AliasTargets.Keys;
 
     public IReadOnlyList<AetheryteMatch> GetUnlockedAetherytes(bool forceRefresh = false)
     {
@@ -42,33 +77,14 @@ public sealed unsafe class AetheryteResolver
         var list = GetUnlockedAetherytes();
         var q = query.Trim();
 
-        // 语义别名（玩家常用简称 → 水晶全名关键词）
-        var aliases = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        foreach (var (alias, targets) in AliasTargets)
         {
-            ["海都"] = "利姆萨罗敏萨上层甲板",
-            ["limsa"] = "Limsa Lominsa Upper Decks",
-            ["森都"] = "格里达尼亚新街",
-            ["gridania"] = "New Gridania",
-            ["沙都"] = "乌尔达哈来生回廊",
-            ["uldah"] = "Ul'dah - Steps of Nald",
-            ["黄金港"] = "黄金港",
-            ["kugane"] = "Kugane",
-            ["神拳痕"] = "神拳痕",
-            ["rhalgr"] = "Rhalgr's Reach",
-            ["水晶都"] = "水晶都",
-            ["crystarium"] = "The Crystarium",
-            ["旧都"] = "旧都",
-            ["old sharlayan"] = "Old Sharlayan",
-            ["拉札罕"] = "拉札罕",
-            ["radz-at-han"] = "Radz-at-Han",
-            ["九宝"] = "九宝",
-            ["tuliyollal"] = "Tuliyollal",
-        };
+            if (!ContainsToken(q, alias))
+            {
+                continue;
+            }
 
-        if (aliases.TryGetValue(q, out var aliasTarget))
-        {
-            var aliasMatch = list.FirstOrDefault(a =>
-                a.Name.Contains(aliasTarget, StringComparison.OrdinalIgnoreCase));
+            var aliasMatch = FindByTargets(list, targets);
             if (aliasMatch != null)
             {
                 return aliasMatch;
@@ -106,9 +122,6 @@ public sealed unsafe class AetheryteResolver
         return true;
     }
 
-    /// <summary>
-    /// 在指定区域内查找已解锁的水晶（用于 flag 寻路时传送到目标地图）。
-    /// </summary>
     public AetheryteMatch? FindNearestInTerritory(uint territoryId)
     {
         if (territoryId == 0)
@@ -176,5 +189,22 @@ public sealed unsafe class AetheryteResolver
         cached = result.OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase).ToList();
         lastRefresh = DateTime.UtcNow;
         log.Info($"已刷新水晶列表: {cached.Count} 个已解锁。");
+    }
+
+    private static bool ContainsToken(string text, string token) =>
+        text.Contains(token, StringComparison.OrdinalIgnoreCase);
+
+    private static AetheryteMatch? FindByTargets(IReadOnlyList<AetheryteMatch> list, IEnumerable<string> targets)
+    {
+        foreach (var target in targets)
+        {
+            var match = list.FirstOrDefault(a => a.Name.Contains(target, StringComparison.OrdinalIgnoreCase));
+            if (match != null)
+            {
+                return match;
+            }
+        }
+
+        return null;
     }
 }

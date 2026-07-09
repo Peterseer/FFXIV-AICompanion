@@ -22,6 +22,7 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] internal static IObjectTable ObjectTable { get; private set; } = null!;
     [PluginService] internal static ITargetManager TargetManager { get; private set; } = null!;
     [PluginService] internal static IPartyList PartyList { get; private set; } = null!;
+    [PluginService] internal static IUnlockState UnlockState { get; private set; } = null!;
     [PluginService] internal static ITextureProvider TextureProvider { get; private set; } = null!;
     [PluginService] internal static IPluginLog Log { get; private set; } = null!;
 
@@ -35,6 +36,8 @@ public sealed class Plugin : IDalamudPlugin
     public NavmeshIpc NavmeshIpc { get; init; }
     public TradeMonitor TradeMonitor { get; init; }
     public PresetTradeService PresetTradeService { get; init; }
+    public CharacterProfileService CharacterProfileService { get; init; }
+    public UiAssetService UiAssets { get; init; }
     public RuntimeControls RuntimeControls { get; init; }
     public PlayerMemory PlayerMemory { get; init; }
     public OutboundEchoGuard EchoGuard { get; init; }
@@ -63,8 +66,13 @@ public sealed class Plugin : IDalamudPlugin
         SafetyService = new InteractionSafetyService(Configuration, ObjectTable, PartyList, ActivityLog);
         EmoteRegistry = new EmoteRegistry(DataManager, ActivityLog);
         AetheryteResolver = new AetheryteResolver(DataManager, ActivityLog);
+        var travelIntentService = new TravelIntentService(AetheryteResolver);
         InventoryService = new InventoryService(DataManager, ActivityLog);
         PresetTradeService = new PresetTradeService(Configuration, InventoryService);
+        var characterProfileService = new CharacterProfileService(DataManager, PlayerState, UnlockState, ActivityLog);
+        CharacterProfileService = characterProfileService;
+        UiAssets = new UiAssetService(TextureProvider, PluginInterface.AssemblyLocation.DirectoryName ?? string.Empty);
+        UiAssets.EnsureLoaded();
         NavmeshIpc navmeshIpc = new(PluginInterface, ActivityLog);
         NavmeshIpc = navmeshIpc;
         tradeMonitor = new TradeMonitor(Framework, GameGui, ObjectTable, Configuration, RuntimeControls, ActivityLog, EchoGuard, PresetTradeService);
@@ -80,6 +88,7 @@ public sealed class Plugin : IDalamudPlugin
             tradeMonitor,
             navmeshIpc,
             PresetTradeService,
+            characterProfileService,
             ObjectTable,
             ClientState,
             playerTargeting,
@@ -87,9 +96,16 @@ public sealed class Plugin : IDalamudPlugin
             ActivityLog);
 
         var adminHandler = new AdminCommandHandler(Configuration, RuntimeControls, socialActionService, navmeshIpc, ActivityLog);
-        aiService = new AiService(Configuration, EmoteRegistry, AetheryteResolver, navmeshIpc, PresetTradeService, ActivityLog);
+        aiService = new AiService(
+            Configuration,
+            EmoteRegistry,
+            AetheryteResolver,
+            navmeshIpc,
+            PresetTradeService,
+            characterProfileService,
+            ActivityLog);
         var tradeIntentConfirmationService = new TradeIntentConfirmationService(
-            PresetTradeService, InventoryService, EchoGuard, ActivityLog);
+            Configuration, PresetTradeService, InventoryService, EchoGuard, ActivityLog);
         orchestrator = new InteractionOrchestrator(
             Configuration,
             aiService,
@@ -111,6 +127,7 @@ public sealed class Plugin : IDalamudPlugin
             EchoGuard,
             InventoryService,
             PresetTradeService,
+            travelIntentService,
             SafetyService);
 
         chatMonitor.OnEvent += orchestrator.Enqueue;
@@ -134,6 +151,7 @@ public sealed class Plugin : IDalamudPlugin
         {
             EmoteRegistry.Refresh();
             AetheryteResolver.Refresh();
+            characterProfileService.RefreshGearsets();
             InventoryService.EnsureInitialized();
         });
 

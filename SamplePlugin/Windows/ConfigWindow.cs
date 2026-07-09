@@ -25,10 +25,10 @@ public class ConfigWindow : Window, IDisposable
     private ItemQualityPreference presetQuality = ItemQualityPreference.Any;
     private bool buffersInitialized;
 
-    public ConfigWindow(Plugin plugin) : base("AI 互动 - 设置###AICompanionConfig")
+    public ConfigWindow(Plugin plugin) : base("AI Companion · 设置###AICompanionConfig")
     {
         this.plugin = plugin;
-        Size = new Vector2(520, 720);
+        Size = new Vector2(560, 760);
         SizeCondition = ImGuiCond.FirstUseEver;
     }
 
@@ -49,7 +49,67 @@ public class ConfigWindow : Window, IDisposable
     public override void Draw()
     {
         EnsureBuffers();
+        plugin.UiAssets.DrawPanelBackground(0.03f);
 
+        plugin.UiAssets.DrawGameIcon(60443, 24f);
+        ImGui.SameLine();
+        ImGui.TextColored(UiTheme.AccentGold, "AI Companion 设置");
+        ImGui.TextColored(UiTheme.Muted, "「核心」页含 API Key、Model、Persona 等人设配置");
+        ImGui.Spacing();
+
+        if (ImGui.BeginTabBar("ConfigTabs"))
+        {
+            if (ImGui.BeginTabItem("核心"))
+            {
+                using (var scroll = ImRaii.Child("ScrollCore", new Vector2(0, ImGui.GetContentRegionAvail().Y - 4), false))
+                {
+                    DrawCoreTab();
+                }
+
+                ImGui.EndTabItem();
+            }
+
+            if (ImGui.BeginTabItem("社交 / 旅行"))
+            {
+                using (var scroll = ImRaii.Child("ScrollSocial", new Vector2(0, ImGui.GetContentRegionAvail().Y - 4), false))
+                {
+                    DrawSocialTravelTab();
+                }
+
+                ImGui.EndTabItem();
+            }
+
+            if (ImGui.BeginTabItem("安全 / 频道"))
+            {
+                using (var scroll = ImRaii.Child("ScrollSafety", new Vector2(0, ImGui.GetContentRegionAvail().Y - 4), false))
+                {
+                    DrawSafetyChannelTab();
+                }
+
+                ImGui.EndTabItem();
+            }
+
+            if (ImGui.BeginTabItem("资源"))
+            {
+                using (var scroll = ImRaii.Child("ScrollResources", new Vector2(0, ImGui.GetContentRegionAvail().Y - 4), false))
+                {
+                    DrawResourcesTab();
+                }
+
+                ImGui.EndTabItem();
+            }
+
+            ImGui.EndTabBar();
+        }
+
+        ImGui.Spacing();
+        ImGui.TextColored(new Vector4(1f, 0.6f, 0.2f, 1f), "警告: 自动聊天/动作/交易有封号风险，请谨慎使用。");
+    }
+
+    private void DrawCoreTab()
+    {
+        UiTheme.BeginSection();
+        UiTheme.SectionHeader("核心开关");
         var enabled = Configuration.Enabled;
         if (ImGui.Checkbox("启用 AI 互动", ref enabled))
         {
@@ -58,10 +118,32 @@ public class ConfigWindow : Window, IDisposable
             plugin.ActivityLog.Info(enabled ? "AI 互动已启用。" : "AI 互动已禁用。");
         }
 
-        ImGui.Spacing();
-        ImGui.TextUnformatted("API 设置");
-        ImGui.Separator();
+        ImGui.TextUnformatted("交互语言（AI 回复与游戏内自动消息）");
+        var langIndex = Configuration.InteractionLanguage == PluginLanguage.English ? 1 : 0;
+        if (ImGui.Combo("##InteractionLanguage", ref langIndex, "简体中文\0English\0", 2))
+        {
+            var newLang = langIndex == 1 ? PluginLanguage.English : PluginLanguage.Chinese;
+            if (newLang != Configuration.InteractionLanguage)
+            {
+                Configuration.InteractionLanguage = newLang;
+                Configuration.Save();
+                plugin.ActivityLog.Info($"交互语言已切换为: {PluginLocale.LanguageDisplayName(newLang)}");
+            }
+        }
 
+        ImGui.SameLine();
+        if (ImGui.Button("加载该语言默认人设"))
+        {
+            Configuration.Persona = PluginLocale.GetDefaultPersona(Configuration.InteractionLanguage);
+            personaBuffer = Configuration.Persona;
+            Configuration.Save();
+            plugin.ActivityLog.Info("已加载默认 Persona。");
+        }
+
+        UiTheme.EndSection();
+
+        UiTheme.BeginSection();
+        UiTheme.SectionHeader("API 设置");
         var baseUrl = Configuration.ApiBaseUrl;
         if (ImGui.InputText("Base URL", ref baseUrl, 256))
         {
@@ -103,12 +185,12 @@ public class ConfigWindow : Window, IDisposable
             Configuration.Save();
         }
 
-        ImGui.Spacing();
-        ImGui.TextUnformatted("角色与管理");
-        ImGui.Separator();
+        UiTheme.EndSection();
 
+        UiTheme.BeginSection();
+        UiTheme.SectionHeader("角色与管理");
         ImGui.TextUnformatted("AI Persona（角色人设）");
-        if (ImGui.InputTextMultiline("##Persona", ref personaBuffer, 4096, new Vector2(-1, 100)))
+        if (ImGui.InputTextMultiline("##Persona", ref personaBuffer, 4096, new Vector2(-1, 120)))
         {
             Configuration.Persona = personaBuffer;
             Configuration.Save();
@@ -122,40 +204,48 @@ public class ConfigWindow : Window, IDisposable
         }
 
         ImGui.TextDisabled("管理员私聊: emote/chat/social on|off, status, reset, help");
-        ImGui.TextDisabled("社交: friend/trade/invite/target 玩家@服, tp 水晶名, nav stop");
+        ImGui.TextDisabled("社交: friend/trade/invite/target 玩家@服, tp/teleport 水晶名, gs/gearset, nav stop");
+        UiTheme.EndSection();
+    }
 
-        ImGui.Spacing();
-        ImGui.TextUnformatted("社交行为（高风险，默认关闭）");
-        ImGui.Separator();
-
+    private void DrawSocialTravelTab()
+    {
+        UiTheme.BeginSection();
+        UiTheme.SectionHeader("社交行为（高风险，默认关闭）");
         DrawChannelToggle("启用社交自动化", () => Configuration.AllowSocialAutomation, v => Configuration.AllowSocialAutomation = v);
 
         using (ImRaii.Disabled(!Configuration.AllowSocialAutomation))
         {
             DrawChannelToggle("  允许加好友", () => Configuration.AllowFriendRequest, v => Configuration.AllowFriendRequest = v);
             DrawChannelToggle("  允许交易", () => Configuration.AllowTrade, v => Configuration.AllowTrade = v);
-            DrawChannelToggle("  交易金额监控（自动放入物品 + 校验金币）", () => Configuration.AllowTradeMonitor, v => Configuration.AllowTradeMonitor = v);
-            DrawChannelToggle("  交易自动提出条件/确认（卖家侧）", () => Configuration.AllowTradeAutoConfirm, v => Configuration.AllowTradeAutoConfirm = v);
+            DrawChannelToggle("  交易金额监控", () => Configuration.AllowTradeMonitor, v => Configuration.AllowTradeMonitor = v);
+            DrawChannelToggle("  交易自动确认（卖家侧）", () => Configuration.AllowTradeAutoConfirm, v => Configuration.AllowTradeAutoConfirm = v);
             DrawChannelToggle("  允许传送", () => Configuration.AllowTeleport, v => Configuration.AllowTeleport = v);
             DrawChannelToggle("  允许组队邀请", () => Configuration.AllowPartyInvite, v => Configuration.AllowPartyInvite = v);
-            DrawChannelToggle("  允许 vnav 寻路（需安装 vnavmesh）", () => Configuration.AllowNavigation, v => Configuration.AllowNavigation = v);
+            DrawChannelToggle("  允许 vnav 寻路", () => Configuration.AllowNavigation, v => Configuration.AllowNavigation = v);
+            DrawChannelToggle("  允许切换装备组", () => Configuration.AllowGearsetSwitch, v => Configuration.AllowGearsetSwitch = v);
         }
 
+        ImGui.TextDisabled("英文示例: \"come to Limsa\" → teleport; 发送 flag + \"come here\" → navigate");
+        UiTheme.EndSection();
+
+        DrawCharacterProfileSection();
         DrawVnavStatus();
         DrawAetheryteSection();
-        DrawPresetTradeSection();
-        DrawInventorySection();
+    }
 
-        ImGui.Spacing();
-        ImGui.TextUnformatted("安全设置");
-        ImGui.Separator();
-        DrawChannelToggle("允许 AI 在公屏（说话频道）发言", () => Configuration.AllowSayChannelOutput, v => Configuration.AllowSayChannelOutput = v);
+    private void DrawSafetyChannelTab()
+    {
+        UiTheme.BeginSection();
+        UiTheme.SectionHeader("安全设置");
+        DrawChannelToggle("启用默语调试 (/echo aic ...)", () => Configuration.EnableEchoDebug, v => Configuration.EnableEchoDebug = v);
+        ImGui.TextDisabled("自测: /echo aic hello");
+        DrawChannelToggle("允许 AI 在公屏发言", () => Configuration.AllowSayChannelOutput, v => Configuration.AllowSayChannelOutput = v);
         DrawChannelToggle("仅限好友/小队成员互动", () => Configuration.InteractOnlyWithFriendsOrParty, v => Configuration.InteractOnlyWithFriendsOrParty = v);
+        UiTheme.EndSection();
 
-        ImGui.Spacing();
-        ImGui.TextUnformatted("监听频道");
-        ImGui.Separator();
-
+        UiTheme.BeginSection();
+        UiTheme.SectionHeader("监听频道");
         DrawChannelToggle("公开说话 (Say)", () => Configuration.ListenSay, v => Configuration.ListenSay = v);
         DrawChannelToggle("喊话 (Shout)", () => Configuration.ListenShout, v => Configuration.ListenShout = v);
         DrawChannelToggle("私聊 (Tell)", () => Configuration.ListenTell, v => Configuration.ListenTell = v);
@@ -164,14 +254,17 @@ public class ConfigWindow : Window, IDisposable
         DrawChannelToggle("小队 (Party)", () => Configuration.ListenParty, v => Configuration.ListenParty = v);
         DrawChannelToggle("联盟 (Alliance)", () => Configuration.ListenAlliance, v => Configuration.ListenAlliance = v);
         DrawChannelToggle("情感动作", () => Configuration.ListenEmotes, v => Configuration.ListenEmotes = v);
-
-        ImGui.Spacing();
         DrawChannelToggle("允许 AI 使用情感动作回应", () => Configuration.AllowEmoteResponse, v => Configuration.AllowEmoteResponse = v);
+        UiTheme.EndSection();
+    }
 
-        ImGui.Spacing();
-        ImGui.TextUnformatted("已解锁情感动作");
-        ImGui.Separator();
+    private void DrawResourcesTab()
+    {
+        DrawPresetTradeSection();
+        DrawInventorySection();
 
+        UiTheme.BeginSection();
+        UiTheme.SectionHeader("已解锁情感动作");
         if (ImGui.Button("刷新情感动作列表"))
         {
             Plugin.Framework.RunOnFrameworkThread(() => plugin.EmoteRegistry.Refresh());
@@ -180,7 +273,7 @@ public class ConfigWindow : Window, IDisposable
         ImGui.SameLine();
         ImGui.TextUnformatted($"共 {plugin.EmoteRegistry.GetUnlockedEmotes().Count} 个");
 
-        using (var child = ImRaii.Child("EmoteList", new Vector2(-1, 120), true))
+        using (var child = ImRaii.Child("EmoteList", new Vector2(-1, 160), true))
         {
             foreach (var emote in plugin.EmoteRegistry.GetUnlockedEmotes())
             {
@@ -188,8 +281,36 @@ public class ConfigWindow : Window, IDisposable
             }
         }
 
-        ImGui.Spacing();
-        ImGui.TextColored(new Vector4(1f, 0.6f, 0.2f, 1f), "警告: 自动聊天/动作/交易有封号风险，请谨慎使用。");
+        UiTheme.EndSection();
+    }
+
+    private void DrawCharacterProfileSection()
+    {
+        UiTheme.BeginSection();
+        UiTheme.SectionHeader("角色信息 / 装备组");
+        DrawChannelToggle("允许 AI 读取职业等级与装备组列表", () => Configuration.AllowCharacterProfileRead, v => Configuration.AllowCharacterProfileRead = v);
+        ImGui.TextDisabled("开启后 AI 提示词会包含当前职业、已解锁等级与装备组清单。");
+
+        if (ImGui.Button("刷新装备组列表"))
+        {
+            Plugin.Framework.RunOnFrameworkThread(() => plugin.CharacterProfileService.RefreshGearsets());
+        }
+
+        ImGui.SameLine();
+        ImGui.TextUnformatted($"装备组: {plugin.CharacterProfileService.GetGearsets().Count} 个");
+
+        var lang = Configuration.InteractionLanguage;
+        ImGui.TextWrapped(plugin.CharacterProfileService.BuildJobSummary(lang));
+
+        using (var gearsetChild = ImRaii.Child("GearsetList", new Vector2(-1, 100), true))
+        {
+            foreach (var gearset in plugin.CharacterProfileService.GetGearsets())
+            {
+                ImGui.TextUnformatted($"#{gearset.EnabledSlot} {gearset.Name} — {gearset.JobName} i{gearset.ItemLevel}");
+            }
+        }
+
+        UiTheme.EndSection();
     }
 
     private void DrawVnavStatus()

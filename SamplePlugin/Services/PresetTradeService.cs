@@ -139,7 +139,7 @@ public sealed class PresetTradeService
     }
 
     /// <summary>生成 AI 系统提示中的预设交易白名单。</summary>
-    public string BuildPromptSection()
+    public string BuildPromptSection(PluginLanguage language)
     {
         var entries = GetEnabledEntries();
         if (entries.Count == 0)
@@ -148,6 +148,22 @@ public sealed class PresetTradeService
         }
 
         var sb = new StringBuilder();
+        if (language == PluginLanguage.English)
+        {
+            sb.AppendLine("## Preset trade list (whitelist)");
+            sb.AppendLine("Only items enabled below may be traded. Quantity, quality and expectedGil must match this list.");
+            foreach (var e in entries)
+            {
+                var quality = FormatQualityShort(e.Quality);
+                var qualityTag = quality.Length > 0 ? $" [{quality}]" : string.Empty;
+                sb.AppendLine($"- {e.ItemName}{qualityTag} x{e.Quantity}: expectedGil={e.ExpectedGil} gil");
+            }
+
+            sb.AppendLine("When asked about these items: quote list prices and use social.trade (itemName + expectedGil from list).");
+            sb.AppendLine("Refuse unlisted items. If inventory hints show insufficient stock, say out of stock — do not start trade.");
+            return sb.ToString();
+        }
+
         sb.AppendLine("## 预设交易清单（交易白名单）");
         sb.AppendLine("只能交易本清单中启用的物品。交易数量、品质与 expectedGil 必须以本表为准，不要自行改价或改数量。");
         foreach (var e in entries)
@@ -162,8 +178,12 @@ public sealed class PresetTradeService
         return sb.ToString();
     }
 
+    /// <summary>生成 AI 系统提示中的预设交易白名单（使用配置语言）。</summary>
+    public string BuildPromptSection(Configuration configuration) =>
+        BuildPromptSection(configuration.InteractionLanguage);
+
     /// <summary>扫描消息文本，返回命中的预设物品及背包数量提示。</summary>
-    public string BuildHint(string text)
+    public string BuildHint(string text, PluginLanguage language)
     {
         if (string.IsNullOrWhiteSpace(text))
         {
@@ -181,11 +201,16 @@ public sealed class PresetTradeService
             var bag = GetBagCount(entry);
             var quality = FormatQualityShort(entry.Quality);
             var qualityTag = quality.Length > 0 ? $" {quality}" : string.Empty;
-            parts.Add($"{entry.ItemName}{qualityTag}: {bag} (定价{entry.ExpectedGil}金币)");
+            var priceSuffix = language == PluginLanguage.English
+                ? $"(price {entry.ExpectedGil} gil)"
+                : $"(定价{entry.ExpectedGil}金币)";
+            parts.Add($"{entry.ItemName}{qualityTag}: {bag} {priceSuffix}");
         }
 
         return parts.Count == 0 ? string.Empty : string.Join(", ", parts);
     }
+
+    public string BuildHint(string text) => BuildHint(text, PluginLanguage.Chinese);
 
     public static string FormatQualityShort(ItemQualityPreference quality) => quality switch
     {

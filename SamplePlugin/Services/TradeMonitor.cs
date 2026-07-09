@@ -471,7 +471,7 @@ public sealed class TradeMonitor : IDisposable
                     log.Warn($"Final trade confirm blocked: {trade.PartnerName} gil={remoteGil}, expected {trade.ExpectedGil}.");
                     TradeUiHelper.TryDeclineSelectYesno(gameGui, log);
                     inv->RefuseTrade();
-                    SendTell(trade, $"金额不对哦，应该是 {trade.ExpectedGil} 金币，你放了 {remoteGil} 金币，交易已取消。");
+                    SendTell(trade, PluginLocale.TradeWrongGilAmount(configuration.InteractionLanguage, trade.ExpectedGil, remoteGil));
                     RemovePending(trade.PartnerName);
                 }
 
@@ -509,7 +509,7 @@ public sealed class TradeMonitor : IDisposable
 
             log.Warn($"交易金额不符: {trade.PartnerName} 放入 {remoteGil} 金币，期望 {trade.ExpectedGil} 金币，已拒绝。");
             inv->RefuseTrade();
-            SendTell(trade, $"金额不对哦，应该是 {trade.ExpectedGil} 金币，你放了 {remoteGil} 金币，交易已取消。");
+            SendTell(trade, PluginLocale.TradeWrongGilAmount(configuration.InteractionLanguage, trade.ExpectedGil, remoteGil));
             RemovePending(trade.PartnerName);
         }
     }
@@ -579,7 +579,7 @@ public sealed class TradeMonitor : IDisposable
 
             if (!unplannedTrade.PromptSent)
             {
-                SendTell(partnerName, ResolveNearbyWorld(partnerName), "你好，请先告诉我你想买什么。");
+                SendTell(partnerName, ResolveNearbyWorld(partnerName), PluginLocale.TradeUnplannedPrompt(configuration.InteractionLanguage));
                 unplannedTrade.PromptSent = true;
                 log.Info($"Unplanned trade prompt sent: {partnerName}");
                 return;
@@ -587,7 +587,7 @@ public sealed class TradeMonitor : IDisposable
 
             if (DateTime.UtcNow - unplannedTrade.StartedAt > TimeSpan.FromSeconds(UnplannedTradeTimeoutSeconds))
             {
-                SendTell(partnerName, ResolveNearbyWorld(partnerName), "暂时没有确认要交易的内容，本次交易先取消。");
+                SendTell(partnerName, ResolveNearbyWorld(partnerName), PluginLocale.TradeUnplannedTimeout(configuration.InteractionLanguage));
                 inv->RefuseTrade();
                 unplannedTrade = null;
             }
@@ -672,7 +672,7 @@ public sealed class TradeMonitor : IDisposable
         }
 
         log.Info($"交易已完成: {trade.PartnerName}（{reason}）");
-        SendTell(trade, "谢谢惠顾，交易愉快！");
+        SendTell(trade, PluginLocale.TradeCompleteThanks(configuration.InteractionLanguage));
         RemovePending(trade.PartnerName);
     }
 

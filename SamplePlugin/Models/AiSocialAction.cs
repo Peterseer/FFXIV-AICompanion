@@ -8,7 +8,7 @@ namespace SamplePlugin.Models;
 public sealed class AiSocialAction
 {
     /// <summary>
-    /// friend | trade | teleport | invite | target | navigate
+    /// friend | trade | teleport | invite | target | navigate | gearset
     /// </summary>
     [JsonPropertyName("action")]
     public string Action { get; set; } = string.Empty;
@@ -42,4 +42,16 @@ public sealed class AiSocialAction
     /// </summary>
     [JsonPropertyName("expectedGil")]
     public long ExpectedGil { get; set; }
+
+    /// <summary>
+    /// 装备组名称（action=gearset 时使用，部分匹配）。
+    /// </summary>
+    [JsonPropertyName("gearsetName")]
+    public string? GearsetName { get; set; }
+
+    /// <summary>
+    /// 装备组 UI 序号（1-based，action=gearset 时使用）。与 gearsetName 二选一。
+    /// </summary>
+    [JsonPropertyName("gearsetSlot")]
+    public int GearsetSlot { get; set; }
 }

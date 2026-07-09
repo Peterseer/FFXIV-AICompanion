@@ -8,12 +8,22 @@ namespace SamplePlugin;
 [Serializable]
 public class Configuration : IPluginConfiguration
 {
-    public int Version { get; set; } = 5;
+    public int Version { get; set; } = 8;
 
     public bool IsConfigWindowMovable { get; set; } = true;
 
+    /// <summary>
+    /// AI 交互语言：影响提示词、游戏内自动回复与上下文标记。
+    /// </summary>
+    public PluginLanguage InteractionLanguage { get; set; } = PluginLanguage.Chinese;
+
     // --- AI 核心设置 ---
     public bool Enabled { get; set; } = false;
+
+    /// <summary>
+    /// 启用 /echo aic ... 默语自测（仅自己可见，不触发公屏）。
+    /// </summary>
+    public bool EnableEchoDebug { get; set; } = true;
 
     public string ApiBaseUrl { get; set; } = "https://api.openai.com/v1";
 
@@ -74,6 +84,16 @@ public class Configuration : IPluginConfiguration
     public bool AllowTeleport { get; set; } = false;
 
     public bool AllowPartyInvite { get; set; } = false;
+
+    /// <summary>
+    /// 允许 AI 读取自身职业等级与装备组列表（注入提示词上下文）。
+    /// </summary>
+    public bool AllowCharacterProfileRead { get; set; } = true;
+
+    /// <summary>
+    /// 允许 AI 通过 social.gearset 切换装备组（可切职或外观）。
+    /// </summary>
+    public bool AllowGearsetSwitch { get; set; } = false;
 
     /// <summary>
     /// 交易时自动监控对方放入的金额，不符则拒绝并告知。

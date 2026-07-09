@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Text.RegularExpressions;
 using Dalamud.Game.Chat;
 using Dalamud.Game.Text;
 using Dalamud.Game.Text.SeStringHandling;
@@ -11,6 +12,10 @@ namespace SamplePlugin.Services;
 
 public sealed class ChatMonitor : IDisposable
 {
+    private static readonly Regex EchoDebugPattern = new(
+        @"^\s*aic(?:\s+|:)(.+)$",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     private readonly IChatGui chatGui;
     private readonly IPlayerState playerState;
     private readonly Configuration configuration;
@@ -20,6 +25,7 @@ public sealed class ChatMonitor : IDisposable
     private readonly OutboundEchoGuard echoGuard;
     private readonly InventoryService inventoryService;
     private readonly PresetTradeService presetTradeService;
+    private readonly TravelIntentService travelIntentService;
     private readonly InteractionSafetyService safetyService;
 
     public event Action<ChatContextEntry>? OnEvent;
@@ -34,6 +40,7 @@ public sealed class ChatMonitor : IDisposable
         OutboundEchoGuard echoGuard,
         InventoryService inventoryService,
         PresetTradeService presetTradeService,
+        TravelIntentService travelIntentService,
         InteractionSafetyService safetyService)
     {
         this.chatGui = chatGui;
@@ -45,6 +52,7 @@ public sealed class ChatMonitor : IDisposable
         this.echoGuard = echoGuard;
         this.inventoryService = inventoryService;
         this.presetTradeService = presetTradeService;
+        this.travelIntentService = travelIntentService;
         this.safetyService = safetyService;
 
         chatGui.ChatMessage += OnChatMessage;
@@ -63,6 +71,11 @@ public sealed class ChatMonitor : IDisposable
         }
 
         var type = message.LogKind;
+
+        if (TryHandleEchoDebug(message, type))
+        {
+            return;
+        }
 
         if (message.SourceKind == XivChatRelationKind.LocalPlayer || IsOutgoingTell(type))
         {
@@ -113,7 +126,8 @@ public sealed class ChatMonitor : IDisposable
         }
 
         var mapLink = ExtractMapLink(message.Message);
-        var presetHint = presetTradeService.BuildHint(messageText);
+        var travelIntent = travelIntentService.Analyze(messageText, mapLink != null, configuration.InteractionLanguage);
+        var presetHint = presetTradeService.BuildHint(messageText, configuration.InteractionLanguage);
         var inventoryHint = string.IsNullOrEmpty(presetHint)
             ? inventoryService.BuildHint(messageText)
             : presetHint;
@@ -137,6 +151,10 @@ public sealed class ChatMonitor : IDisposable
             MapWorldZ = mapLink != null ? mapLink.RawY / 1000f : 0,
             MapPlaceName = mapLink?.PlaceName ?? string.Empty,
             MapCoords = mapLink?.CoordinateString ?? string.Empty,
+            TravelHint = travelIntent?.Hint ?? string.Empty,
+            WantsTravelNavigation = travelIntent?.WantsNavigation ?? false,
+            WantsTravelTeleport = travelIntent?.WantsTeleport ?? false,
+            TravelAetheryteQuery = travelIntent?.AetheryteQuery ?? string.Empty,
         };
 
         if (adminHandler.TryHandle(entry))
@@ -149,10 +167,64 @@ public sealed class ChatMonitor : IDisposable
             return;
         }
 
-        var hintSuffix = string.IsNullOrEmpty(inventoryHint) ? string.Empty : $" [背包: {inventoryHint}]";
-        var mapSuffix = mapLink != null ? $" [坐标: {mapLink.PlaceName} {mapLink.CoordinateString}]" : string.Empty;
-        log.Info($"收到 [{channelName}] {senderFullId}: {Truncate(messageText, 80)}{hintSuffix}{mapSuffix}");
+        var lang = configuration.InteractionLanguage;
+        var inventoryTag = PluginLocale.InventoryContextPrefix(lang);
+        var mapTag = PluginLocale.MapContextPrefix(lang);
+        var hintSuffix = string.IsNullOrEmpty(inventoryHint) ? string.Empty : $" {inventoryTag} {inventoryHint}]";
+        var mapSuffix = mapLink != null ? $" {mapTag} {mapLink.PlaceName} {mapLink.CoordinateString}]" : string.Empty;
+        var travelSuffix = string.IsNullOrEmpty(entry.TravelHint) ? string.Empty : $" {entry.TravelHint}";
+        log.Info($"收到 [{channelName}] {senderFullId}: {Truncate(messageText, 80)}{hintSuffix}{mapSuffix}{travelSuffix}");
         OnEvent?.Invoke(entry);
+    }
+
+    private bool TryHandleEchoDebug(IHandleableChatMessage message, XivChatType type)
+    {
+        if (!configuration.EnableEchoDebug || type != XivChatType.Echo)
+        {
+            return false;
+        }
+
+        var messageText = message.Message.TextValue.Trim();
+        if (string.IsNullOrWhiteSpace(messageText))
+        {
+            return false;
+        }
+
+        var match = EchoDebugPattern.Match(messageText);
+        if (!match.Success)
+        {
+            return false;
+        }
+
+        var prompt = match.Groups[1].Value.Trim();
+        if (string.IsNullOrWhiteSpace(prompt))
+        {
+            return false;
+        }
+
+        var localName = playerState.CharacterName ?? string.Empty;
+        var presetHint = presetTradeService.BuildHint(prompt, configuration.InteractionLanguage);
+        var inventoryHint = string.IsNullOrEmpty(presetHint)
+            ? inventoryService.BuildHint(prompt)
+            : presetHint;
+
+        var entry = new ChatContextEntry
+        {
+            Channel = "echo",
+            Sender = localName,
+            SenderFullId = localName,
+            Message = prompt,
+            IsLocalPlayer = false,
+            IsEchoDebug = true,
+            InventoryHint = inventoryHint,
+        };
+
+        var lang = configuration.InteractionLanguage;
+        var inventoryTag = PluginLocale.InventoryContextPrefix(lang);
+        var hintSuffix = string.IsNullOrEmpty(inventoryHint) ? string.Empty : $" {inventoryTag} {inventoryHint}]";
+        log.Info($"默语调试 [echo] {localName}: {Truncate(prompt, 80)}{hintSuffix}");
+        OnEvent?.Invoke(entry);
+        return true;
     }
 
     private static MapLinkPayload? ExtractMapLink(SeString message)

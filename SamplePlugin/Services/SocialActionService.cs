@@ -19,6 +19,7 @@ public sealed class SocialActionService
     private readonly TradeMonitor tradeMonitor;
     private readonly NavmeshIpc navmeshIpc;
     private readonly PresetTradeService presetTradeService;
+    private readonly CharacterProfileService characterProfileService;
     private readonly IObjectTable objectTable;
     private readonly IClientState clientState;
     private readonly PlayerTargeting playerTargeting;
@@ -33,6 +34,7 @@ public sealed class SocialActionService
         TradeMonitor tradeMonitor,
         NavmeshIpc navmeshIpc,
         PresetTradeService presetTradeService,
+        CharacterProfileService characterProfileService,
         IObjectTable objectTable,
         IClientState clientState,
         PlayerTargeting playerTargeting,
@@ -46,6 +48,7 @@ public sealed class SocialActionService
         this.tradeMonitor = tradeMonitor;
         this.navmeshIpc = navmeshIpc;
         this.presetTradeService = presetTradeService;
+        this.characterProfileService = characterProfileService;
         this.objectTable = objectTable;
         this.clientState = clientState;
         this.playerTargeting = playerTargeting;
@@ -90,6 +93,7 @@ public sealed class SocialActionService
             "target" => ExecuteTarget(action, out message),
             "teleport" or "tp" => ExecuteTeleport(action, isAdminOverride, out message),
             "navigate" or "nav" or "goto" => ExecuteNavigate(action, trigger, isAdminOverride, out message),
+            "gearset" or "equip" or "gs" => ExecuteGearset(action, isAdminOverride, out message),
             _ => false,
         };
     }
@@ -274,6 +278,23 @@ public sealed class SocialActionService
             log.Error(message);
             return false;
         }
+    }
+
+    private bool ExecuteGearset(AiSocialAction action, bool isAdminOverride, out string message)
+    {
+        if (!isAdminOverride && !configuration.AllowGearsetSwitch)
+        {
+            message = "装备组切换功能未在设置中启用。";
+            return false;
+        }
+
+        if (characterProfileService.TryEquipGearset(action.GearsetName, action.GearsetSlot, out message))
+        {
+            return true;
+        }
+
+        log.Warn(message);
+        return false;
     }
 
     private bool ExecuteTeleport(AiSocialAction action, bool isAdminOverride, out string message)

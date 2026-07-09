@@ -28,6 +28,11 @@ public sealed class InteractionSafetyService
 
     public bool CanReceiveInteraction(ChatContextEntry entry)
     {
+        if (entry.IsEchoDebug)
+        {
+            return true;
+        }
+
         if (!configuration.InteractOnlyWithFriendsOrParty)
         {
             return true;
