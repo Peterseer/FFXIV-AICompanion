@@ -37,6 +37,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path $hooks | Out-Null
           Invoke-WebRequest -Uri https://goatcorp.github.io/dalamud-distrib/stg/latest.zip -OutFile dalamud.zip
           Expand-Archive -Force -Path dalamud.zip -DestinationPath $hooks
+          "DALAMUD_HOME=$hooks" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Build Release
         run: dotnet build SamplePlugin/SamplePlugin.csproj --configuration Release
